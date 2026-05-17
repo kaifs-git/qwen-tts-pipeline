@@ -1,11 +1,24 @@
 venv/
 __pycache__/
 *.pyc
+*.pyo
 .env
 *.egg-info/
 dist/
 build/
 .DS_Store
 *.log
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# benchmark outputs
+bench/results/
+demo/*.mp4
+demo/*.wav
+
+# vast.ai working dirs
+.vastai/
+
+# tmp dirs
 tmp/
-*.docx
