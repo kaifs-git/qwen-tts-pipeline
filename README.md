@@ -11,7 +11,7 @@ Targets: **TTFC < 60ms**, **RTF < 0.15**, streaming frame-by-frame to Pipecat (n
 | Phase | What | Where |
 |-------|------|-------|
 | A1 | Pipecat skeleton: Groq STT + Groq LLM + edge-tts TTSService + LocalAudioTransport + Silero VAD + 7-stage smoke test | ✅ `server.py`, `pipeline/tts_edge.py`, `tests/smoke.py` |
-| A2 | `MegakernelTTSService` interface stub w/ mock backend | ⏳ |
+| A2 | `MegakernelTTSService` + `TalkerBackend` protocol + `MockTalkerBackend` + `--tts` CLI flag | ✅ `pipeline/tts_megakernel.py`, `pipeline/talker_backend.py` |
 | A3 | Benchmark harness (TTFC / RTF / tok/s) | ⏳ `bench/` |
 | B  | Talker kernel fork: NUM_LAYERS 28→20, NUM_KV_HEADS 8→2, VOCAB 151936→3072, prefill API | ⏳ `kernels/talker_kernel/` |
 | C  | vast.ai RTX 5090 bring-up + real megakernel TTS + bench + demo | ⏳ |
@@ -27,11 +27,18 @@ mic → LocalAudioInput → Silero VAD → GroqSTT (whisper-large-v3-turbo)
     → context aggregator → GroqLLM (llama-3.3-70b)
     → TTSService → LocalAudioOutput → speaker
                 ↑
-                EdgeTTSService (local placeholder)
-                MegakernelTTSService (vast.ai prod)
+                ├── EdgeTTSService               (--tts edge)
+                └── MegakernelTTSService         (--tts mock-megakernel today,
+                        ↑                         real on vast.ai)
+                        TalkerBackend protocol
+                        ├── MockTalkerBackend       (sine wave, paced at RTF=0.15)
+                        └── MegakernelTalkerBackend (Phase C — text encoder
+                            → adapted megakernel talker → CodePredictor → vocoder)
 ```
 
-`TTSService` interface is identical for both backends — `run_tts(text, context_id) -> AsyncGenerator[Frame, None]` yielding `TTSStartedFrame → TTSAudioRawFrame(24kHz mono s16le) → TTSStoppedFrame`. Swap is one import line in `server.py`.
+`TTSService` interface is identical for both backends — `run_tts(text, context_id) -> AsyncGenerator[Frame, None]` yielding `TTSStartedFrame → TTSAudioRawFrame(24kHz mono s16le) → TTSStoppedFrame`.
+
+`MegakernelTTSService` delegates to whatever `TalkerBackend` you hand it. The real GPU backend (Phase C) drops in without touching pipeline wiring, smoke tests, or `server.py`.
 
 ---
 
@@ -84,7 +91,7 @@ cp .env.example .env
 venv/bin/python -m tests.smoke
 ```
 
-Runs 7 checks before you ever touch the live pipeline:
+Runs 8 checks before you ever touch the live pipeline:
 
 | # | Check | What it proves |
 |---|-------|----------------|
@@ -93,8 +100,9 @@ Runs 7 checks before you ever touch the live pipeline:
 | 3 | PyAudio finds default mic + speaker | system audio works |
 | 4 | Groq STT round-trips a synthesized clip | `whisper-large-v3-turbo` reachable |
 | 5 | Groq LLM returns one token | `llama-3.3-70b-versatile` reachable |
-| 6 | `EdgeTTSService.run_tts` yields PCM frames + reports TTFC | TTS service works end-to-end |
+| 6 | `EdgeTTSService.run_tts` yields PCM frames + reports TTFC | edge TTS path works end-to-end |
 | 7 | Full Pipecat `Pipeline([...])` graph builds (no mic, no run) | wiring is valid |
+| 8 | `MegakernelTTSService` + `MockTalkerBackend` yields PCM frames | mock backend works; same path real GPU backend will take |
 
 All green → run the live agent. Any red → fix before `server.py`.
 
@@ -105,8 +113,14 @@ Exit code = number of failures (good for CI).
 ## Run the voice agent
 
 ```bash
-venv/bin/python server.py
+venv/bin/python server.py                          # default: --tts edge
+venv/bin/python server.py --tts mock-megakernel    # 440Hz sine, paced at RTF=0.15
 ```
+
+| `--tts` | What | When to use |
+|---------|------|-------------|
+| `edge`            | Microsoft Edge cloud TTS (placeholder, real-sounding voice) | Default; demo the pipeline end-to-end |
+| `mock-megakernel` | `MegakernelTTSService` + `MockTalkerBackend` (sine wave) | Verify pipeline shape; proves swap is one flag away on vast.ai |
 
 - Silero VAD handles turn-taking — just speak, no Enter-to-talk
 - Talking over the assistant interrupts it (Pipecat `allow_interruptions=True`)
@@ -121,7 +135,9 @@ venv/bin/python server.py
 ├── server.py              # Pipecat voice agent entry point
 ├── pipeline/              # custom Pipecat services
 │   ├── __init__.py
-│   └── tts_edge.py        # EdgeTTSService (local TTS placeholder)
+│   ├── tts_edge.py        # EdgeTTSService (edge-tts placeholder)
+│   ├── tts_megakernel.py  # MegakernelTTSService (backend-agnostic wrapper)
+│   └── talker_backend.py  # TalkerBackend protocol + MockTalkerBackend
 ├── tests/
 │   └── smoke.py           # pre-flight checks (7 stages, see above)
 ├── bench/                 # perf harness (Phase A3) — TTFC / RTF / tok/s

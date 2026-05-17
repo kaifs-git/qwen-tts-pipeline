@@ -6,17 +6,25 @@ Pipeline:
       → Groq STT (whisper-large-v3-turbo)
       → context aggregator (user)
       → Groq LLM (llama-3.3-70b)
-      → EdgeTTSService (placeholder; will swap to MegakernelTTSService on vast.ai)
+      → TTS service (chosen via --tts)
       → LocalAudioOutput (speaker)
       → context aggregator (assistant)
 
+TTS backends:
+    --tts edge              edge-tts (default; placeholder, internet round-trip)
+    --tts mock-megakernel   MegakernelTTSService + MockTalkerBackend
+                            (sine wave, paced at RTF=0.15 — same interface the
+                             real megakernel backend will satisfy on vast.ai)
+
 Run:
     venv/bin/python server.py
+    venv/bin/python server.py --tts mock-megakernel
 
 Speak after the startup line. Pipecat handles VAD turn-taking — no Enter-to-talk.
 Ctrl+C to quit.
 """
 
+import argparse
 import asyncio
 import os
 import sys
@@ -38,9 +46,21 @@ from pipecat.transports.local.audio import (
     LocalAudioTransportParams,
 )
 
+from pipeline.talker_backend import MockTalkerBackend
 from pipeline.tts_edge import EdgeTTSService
+from pipeline.tts_megakernel import MegakernelTTSService
 
 load_dotenv()
+
+TTS_BACKENDS = ("edge", "mock-megakernel")
+
+
+def build_tts(name: str):
+    if name == "edge":
+        return EdgeTTSService(voice="en-US-AriaNeural")
+    if name == "mock-megakernel":
+        return MegakernelTTSService(backend=MockTalkerBackend())
+    raise ValueError(f"unknown --tts backend: {name}")
 
 SYSTEM_PROMPT = (
     "You are a helpful voice assistant. "
@@ -49,7 +69,7 @@ SYSTEM_PROMPT = (
 )
 
 
-async def main():
+async def main(tts_backend: str):
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         logger.error("GROQ_API_KEY not set — add it to .env")
@@ -68,7 +88,7 @@ async def main():
 
     stt = GroqSTTService(api_key=api_key)
     llm = GroqLLMService(api_key=api_key, model="llama-3.3-70b-versatile")
-    tts = EdgeTTSService(voice="en-US-AriaNeural")
+    tts = build_tts(tts_backend)
 
     context = OpenAILLMContext(messages=[{"role": "system", "content": SYSTEM_PROMPT}])
     context_aggregator = llm.create_context_aggregator(context)
@@ -95,9 +115,9 @@ async def main():
     )
 
     print("\n========================================")
-    print("  Voice Pipeline | Pipecat + Groq + edge-tts")
+    print("  Voice Pipeline | Pipecat + Groq")
     print("  STT: whisper-large-v3-turbo | LLM: llama-3.3-70b")
-    print("  TTS: edge-tts (placeholder for megakernel)")
+    print(f"  TTS: {tts_backend}  ({type(tts).__name__})")
     print("========================================")
     print("  Speak whenever you want — Silero VAD handles turn-taking.")
     print("  Ctrl+C to quit.\n")
@@ -110,4 +130,12 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument(
+        "--tts",
+        choices=TTS_BACKENDS,
+        default="edge",
+        help="TTS backend (default: edge)",
+    )
+    args = parser.parse_args()
+    asyncio.run(main(args.tts))

@@ -9,6 +9,7 @@ Tests, in order:
     5. Groq LLM: one-token completion via pipecat service
     6. EdgeTTSService: synth + decode + count PCM frames
     7. Pipeline wiring: build the full Pipeline graph (no run, no mic)
+    8. MegakernelTTSService + MockTalkerBackend: yields paced PCM frames
 
 All steps log PASS / FAIL with timing. Exit code = number of failures.
 
@@ -56,7 +57,7 @@ def fail(msg, err=None):
 
 # ---------- 1. env ----------
 def test_env():
-    step("1/7  env vars")
+    step("1/8  env vars")
     key = os.getenv("GROQ_API_KEY")
     if not key:
         fail("GROQ_API_KEY not set — add to .env")
@@ -67,7 +68,7 @@ def test_env():
 
 # ---------- 2. imports ----------
 def test_imports():
-    step("2/7  imports")
+    step("2/8  imports")
     mods = [
         "pipecat",
         "pipecat.services.groq.stt",
@@ -105,7 +106,7 @@ def _restore_stderr(saved_stderr, devnull):
 
 
 def test_audio_devices():
-    step("3/7  audio devices (PyAudio)")
+    step("3/8  audio devices (PyAudio)")
     try:
         import pyaudio
 
@@ -140,7 +141,7 @@ def _gen_silence_wav(seconds=1.0, rate=16000) -> bytes:
 
 
 def test_groq_stt(api_key):
-    step("4/7  Groq STT round-trip")
+    step("4/8  Groq STT round-trip")
     if not api_key:
         fail("skipped — no api key")
         return
@@ -162,7 +163,7 @@ def test_groq_stt(api_key):
 
 # ---------- 5. Groq LLM ----------
 def test_groq_llm(api_key):
-    step("5/7  Groq LLM completion")
+    step("5/8  Groq LLM completion")
     if not api_key:
         fail("skipped — no api key")
         return
@@ -184,7 +185,7 @@ def test_groq_llm(api_key):
 
 # ---------- 6. EdgeTTSService ----------
 async def test_edge_tts():
-    step("6/7  EdgeTTSService (synth + decode)")
+    step("6/8  EdgeTTSService (synth + decode)")
     try:
         from pipeline.tts_edge import EdgeTTSService
 
@@ -208,7 +209,7 @@ async def test_edge_tts():
 
 # ---------- 7. Pipeline wiring ----------
 def test_pipeline_build(api_key):
-    step("7/7  Pipecat pipeline build (no run)")
+    step("7/8  Pipecat pipeline build (no run)")
     if not api_key:
         fail("skipped — no api key")
         return
@@ -256,6 +257,31 @@ def test_pipeline_build(api_key):
         fail("Pipeline build", e)
 
 
+# ---------- 8. MegakernelTTSService (mock backend) ----------
+async def test_mock_megakernel():
+    step("8/8  MegakernelTTSService + MockTalkerBackend")
+    try:
+        from pipeline.talker_backend import MockTalkerBackend
+        from pipeline.tts_megakernel import MegakernelTTSService
+
+        tts = MegakernelTTSService(backend=MockTalkerBackend(pace_rtf=0.0))
+        t = time.perf_counter()
+        n, total = 0, 0
+        ttfc_ms = None
+        async for f in tts.run_tts("Mock megakernel test.", "mock-1"):
+            if type(f).__name__ == "TTSAudioRawFrame":
+                if ttfc_ms is None:
+                    ttfc_ms = (time.perf_counter() - t) * 1000
+                n += 1
+                total += len(f.audio)
+        secs = total / (24000 * 2)
+        ok(f"chunks={n}  audio={secs:.2f}s  TTFC≈{ttfc_ms:.0f}ms  (pace_rtf=0)")
+        if n == 0:
+            fail("no PCM frames produced")
+    except Exception as e:
+        fail("MegakernelTTSService.run_tts", e)
+
+
 async def main():
     print("=" * 60)
     print(" Smoke tests — Qwen-TTS Pipecat pipeline")
@@ -268,6 +294,8 @@ async def main():
     test_groq_llm(key)
     await test_edge_tts()
     test_pipeline_build(key)
+
+    await test_mock_megakernel()
 
     print("\n" + "=" * 60)
     if failures == 0:
