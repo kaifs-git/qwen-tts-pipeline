@@ -82,26 +82,26 @@ echo 'export HF_HOME=/workspace/hf_cache' >> ~/.bashrc
 git clone https://github.com/AlpinDale/qwen_megakernel kernels/qwen_megakernel
 
 # 4. Model is gated. NOTE: `Qwen/Qwen3-TTS` is a COLLECTION, not a repo —
-#    the actual weights repo is `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`.
+#    the actual weights repo is `Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice`.
 #    Accept terms in browser FIRST at:
-#    https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
+#    https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice
 export HUGGINGFACE_HUB_TOKEN=hf_...
 huggingface-cli login --token "$HUGGINGFACE_HUB_TOKEN"
 
 # 5. Pre-cache (~3.5 GB) — saves time on first model load.
-huggingface-cli download Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
+huggingface-cli download Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice
 ```
 
 Verify cache location + gated access:
 ```bash
 # Cache landed where expected
-du -sh "$HF_HOME/hub/models--Qwen--Qwen3-TTS-12Hz-1.7B-CustomVoice"   # expect ~3.5G
+du -sh "$HF_HOME/hub/models--Qwen--Qwen3-TTS-12Hz-0.6B-CustomVoice"   # expect ~1-2G
 df -h /                                             # confirm room left (big disk = /)
 
 # Auth + gating works
 python -c "
 from huggingface_hub import hf_hub_download
-hf_hub_download('Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice', 'config.json')
+hf_hub_download('Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice', 'config.json')
 print('gated access OK')
 "
 ```
@@ -138,13 +138,13 @@ cd ../..
 ```bash
 cd kernels/talker_kernel
 ../../venv/bin/pip install -r requirements.txt
-# First import triggers JIT build with new constants (NUM_LAYERS=20, NUM_KV_HEADS=2, etc.)
+# First import triggers JIT build. Talker = Qwen3-0.6B dims with LDG_VOCAB_SIZE=3072.
 ../../venv/bin/python -c "import talker_megakernel; print('built')"
 ```
 
 Expected: `built`. nvcc may warn about new dims; warnings are fine, errors aren't.
 
-If build fails: check `kernel.cu` constants block matches `model.py` constants — both must be `NUM_LAYERS=20, NUM_KV_HEADS=2, INTERMEDIATE_SIZE=2048, LDG_VOCAB_SIZE=3072` exactly.
+If build fails: check `kernel.cu` constants block matches `model.py` constants — both must be `NUM_LAYERS=28, NUM_KV_HEADS=8, INTERMEDIATE_SIZE=3072, LDG_VOCAB_SIZE=3072` (= Qwen3-0.6B dims, only vocab differs from upstream).
 
 ```bash
 cd ../..
@@ -164,7 +164,7 @@ cd kernels/talker_kernel
 cd ../..
 ```
 
-Expected (rough): talker dims are smaller than 0.6B (fewer layers, smaller KV, much smaller LM head). Should beat upstream's ~1000 tok/s. Record number for README perf table.
+Expected (rough): talker = same backbone as Qwen3-0.6B, only the LM head is smaller (3072 vs 151936 vocab). Should match or slightly beat upstream's ~1000 tok/s (less LM-head matmul). Record number for README perf table.
 
 If tok/s is below 500 — kernel is mis-launched or a constant is wrong. Bisect against upstream perf.
 
@@ -377,8 +377,8 @@ Then destroy the instance from the vast.ai console.
 |---|---|---|
 | `nvcc: command not found` | Runtime-only image | `apt install cuda-toolkit-12-8` |
 | Kernel build: `unrecognized architecture sm_120` | nvcc too old | Need CUDA 12.8+, upgrade toolkit |
-| `Repository Not Found .../Qwen/Qwen3-TTS` | `Qwen/Qwen3-TTS` is a collection, not a repo | Use `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice` |
-| `OSError: ... is gated` / 403 | Terms not accepted for the specific repo | Accept at hf.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice |
+| `Repository Not Found .../Qwen/Qwen3-TTS` | `Qwen/Qwen3-TTS` is a collection, not a repo | Use `Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice` |
+| `OSError: ... is gated` / 403 | Terms not accepted for the specific repo | Accept at hf.co/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice |
 | `import qwen_tts` fails | Package not installed | `pip install -U qwen-tts` |
 | `OSError: [Errno 28] No space left on device` mid-download | HF cache on small `/` partition | `export HF_HOME=/workspace/hf_cache` then re-download (see C3) |
 | `from_pretrained` re-downloads every run | `HF_HOME` not set in current shell | Re-export, or persist via `~/.bashrc` |

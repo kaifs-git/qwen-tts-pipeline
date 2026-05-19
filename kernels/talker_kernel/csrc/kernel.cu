@@ -1,19 +1,18 @@
 /**
  * Fused single-kernel decode for Qwen3-TTS talker decoder on RTX 5090.
  *
- * Forked from AlpinDale/qwen_megakernel (Qwen3-0.6B). Constants swapped for
- * talker decoder dims per take-home spec: "If the talker decoder's backbone
- * is a different size than 0.6B, document what you changed in the kernel
- * and why".
+ * Forked from AlpinDale/qwen_megakernel (Qwen3-0.6B). Per take-home spec:
+ * "If the talker decoder's backbone is a different size than 0.6B, document
+ * what you changed in the kernel and why".
  *
- * Changes vs upstream Qwen3-0.6B megakernel:
- *   NUM_LAYERS        28 → 20      (fewer transformer layers)
- *   NUM_KV_HEADS       8 →  2      (KV_SIZE 1024 → 256)
- *   INTERMEDIATE_SIZE 3072 → 2048  (smaller SwiGLU MLP)
- *   LDG_VOCAB_SIZE 151936 → 3072   (codec token vocab — talker emits codec ids)
- * Unchanged: HIDDEN_SIZE 1024, NUM_Q_HEADS 16, HEAD_DIM 128.
+ * The Qwen3-TTS-0.6B talker is architecturally IDENTICAL to Qwen3-0.6B.
+ * Verified against config.json of Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice
+ * (talker: 28 layers, 1024 hidden, 8 KV heads, 3072 intermediate, 128 head_dim).
+ * The ONLY change vs upstream:
+ *   LDG_VOCAB_SIZE 151936 → 3072   (LM head emits codec tokens, not text)
+ * All other dims match upstream exactly.
  *
- * Everything — embedding lookup, 20 transformer layers (RMSNorm, QKV, RoPE,
+ * Everything — embedding lookup, 28 transformer layers (RMSNorm, QKV, RoPE,
  * attention, O-proj, MLP), and final norm — runs inside one cooperative kernel
  * launch.  The LM head (codec vocab projection + argmax) is a separate
  * non-cooperative kernel launched immediately after.
@@ -27,17 +26,17 @@
 #include <cuda_runtime.h>
 
 // =============================================================================
-// Model constants (Qwen3-TTS talker decoder)
+// Model constants (Qwen3-TTS talker decoder — = Qwen3-0.6B except vocab)
 // =============================================================================
 
 constexpr int WARP_SIZE = 32;
 constexpr int HIDDEN_SIZE = 1024;
-constexpr int INTERMEDIATE_SIZE = 2048;
+constexpr int INTERMEDIATE_SIZE = 3072;
 constexpr int NUM_Q_HEADS = 16;
-constexpr int NUM_KV_HEADS = 2;
+constexpr int NUM_KV_HEADS = 8;
 constexpr int HEAD_DIM = 128;
 constexpr int Q_SIZE = NUM_Q_HEADS * HEAD_DIM;   // 2048
-constexpr int KV_SIZE = NUM_KV_HEADS * HEAD_DIM; // 256
+constexpr int KV_SIZE = NUM_KV_HEADS * HEAD_DIM; // 1024
 
 #ifndef LDG_NUM_BLOCKS
 #define LDG_NUM_BLOCKS 128

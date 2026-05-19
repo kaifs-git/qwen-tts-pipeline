@@ -13,7 +13,7 @@ Targets: **TTFC < 60ms**, **RTF < 0.15**, streaming frame-by-frame to Pipecat (n
 | A1 | Pipecat skeleton: Groq STT + Groq LLM + edge-tts TTSService + LocalAudioTransport + Silero VAD + 7-stage smoke test | ✅ `server.py`, `pipeline/tts_edge.py`, `tests/smoke.py` |
 | A2 | `MegakernelTTSService` + `TalkerBackend` protocol + `MockTalkerBackend` + `--tts` CLI flag | ✅ `pipeline/tts_megakernel.py`, `pipeline/talker_backend.py` |
 | A3 | Benchmark harness — TTFC / synth_ms / RTF, per backend, p50+p95, JSON output, target-pass marks | ✅ `bench/perf.py` |
-| B1.1 | Talker kernel fork: constants swap (NUM_LAYERS 28→20, NUM_KV_HEADS 8→2, INTERMEDIATE 3072→2048, VOCAB 151936→3072) | ✅ `kernels/talker_kernel/csrc/kernel.cu`, `talker_megakernel/model.py` |
+| B1.1 | Talker kernel fork: VOCAB 151936→3072 (only change — talker = Qwen3-0.6B with codec LM head; verified vs model config.json) | ✅ `kernels/talker_kernel/csrc/kernel.cu`, `talker_megakernel/model.py` |
 | B1.2 | Weight loader for Qwen3-TTS talker `state_dict` — auto-detects `talker.model.*` vs `model.*` prefix; pulls embed from `codec_embedding`, lm_head from `codec_head` (NOT tied) | ✅ `talker_megakernel/model.py::load_weights` |
 | B1.3 | Embed-bypass: `Decoder.step_embed(inputs_embeds[HIDDEN_SIZE]) -> codec_id` — pass single-row scratch as `embed_weight`, token_id=0. Zero CUDA edit. | ✅ `talker_megakernel/model.py::Decoder.step_embed` |
 | B1.4 | Prefill API: `Decoder.prefill(seq[N, HIDDEN_SIZE])` loops `step_embed` to seed KV from text-encoder hiddens. | ✅ `talker_megakernel/model.py::Decoder.prefill` |
@@ -51,22 +51,22 @@ mic → LocalAudioInput → Silero VAD → GroqSTT (whisper-large-v3-turbo)
 
 > Per take-home spec: *"If the talker decoder's backbone is a different size than 0.6B, document what you changed in the kernel and why."*
 
-Forked AlpinDale's `qwen_megakernel` → `kernels/talker_kernel/`. Upstream is locked to **Qwen3-0.6B**; talker decoder is a structurally identical Qwen3-family decoder at **different dims**. Constants were swapped; CUDA kernel logic untouched.
+Forked AlpinDale's `qwen_megakernel` → `kernels/talker_kernel/`. Upstream targets **Qwen3-0.6B**. The Qwen3-TTS-0.6B talker decoder (`Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice`) is **architecturally identical** to Qwen3-0.6B — verified against its `config.json`. The only difference: its LM head emits codec tokens, not text. So exactly **one constant changes**; CUDA kernel logic untouched.
 
 ### Constants (kernel.cu + talker_megakernel/model.py)
 
-| Constant | Qwen3-0.6B (upstream) | Qwen3-TTS talker | Why |
+| Constant | Qwen3-0.6B (upstream) | Qwen3-TTS-0.6B talker | Changed? |
 |---|---|---|---|
-| `NUM_LAYERS` | 28 | **20** | Talker is shallower |
-| `NUM_KV_HEADS` | 8 | **2** | Group-query attention; KV_SIZE drops 1024 → 256 |
-| `INTERMEDIATE_SIZE` | 3072 | **2048** | Smaller SwiGLU MLP |
-| `VOCAB_SIZE` (`LDG_VOCAB_SIZE`) | 151936 | **3072** | LM head emits **codec tokens**, not text |
-| `HIDDEN_SIZE` | 1024 | 1024 | Unchanged |
-| `NUM_Q_HEADS` | 16 | 16 | Unchanged |
-| `HEAD_DIM` | 128 | 128 | Unchanged |
-| `MAX_SEQ_LEN` | 2048 | 2048 | Unchanged |
+| `VOCAB_SIZE` (`LDG_VOCAB_SIZE`) | 151936 | **3072** | ✅ LM head emits codec tokens, not text |
+| `NUM_LAYERS` | 28 | 28 | — |
+| `NUM_KV_HEADS` | 8 | 8 | — (KV_SIZE 1024) |
+| `INTERMEDIATE_SIZE` | 3072 | 3072 | — |
+| `HIDDEN_SIZE` | 1024 | 1024 | — |
+| `NUM_Q_HEADS` | 16 | 16 | — |
+| `HEAD_DIM` | 128 | 128 | — |
+| `MAX_SEQ_LEN` | 2048 | 2048 | — |
 
-`VOCAB_SIZE` drop (151936 → 3072) is the largest perf win — the LM head matmul dominates per-step latency in the original kernel.
+The `VOCAB_SIZE` drop (151936 → 3072) is also a perf win — the LM head matmul dominated per-step latency in the original kernel. Because `HIDDEN_SIZE` and all attention/MLP dims are unchanged, the kernel keeps upstream's exact shared-memory layout and perf tuning — no retuning needed. (We initially mis-sized the talker from config-class defaults; corrected after reading the actual model `config.json` on the GPU box.)
 
 ### Python-side adaptations (`talker_megakernel/model.py`)
 
@@ -133,7 +133,7 @@ venv/bin/pip install -r requirements.txt
 ```bash
 cp .env.example .env
 # add: GROQ_API_KEY=gsk_...
-# Phase C also: HUGGINGFACE_HUB_TOKEN=hf_...   (gated: Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice)
+# Phase C also: HUGGINGFACE_HUB_TOKEN=hf_...   (gated: Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice)
 # Phase C also: HF_HOME=/workspace/hf_cache    (vast.ai disk layout — see runbook)
 ```
 

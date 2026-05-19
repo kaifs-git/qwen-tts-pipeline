@@ -1,16 +1,18 @@
 """Weight loading and high-level decode API for Qwen3-TTS talker decoder.
 
-Forked from AlpinDale/qwen_megakernel (Qwen3-0.6B). Constants swapped for
-talker decoder dims per take-home spec ("If the talker decoder's backbone
-is a different size than 0.6B, document what you changed in the kernel
-and why"):
+Forked from AlpinDale/qwen_megakernel (Qwen3-0.6B). The Qwen3-TTS-0.6B talker
+decoder is architecturally IDENTICAL to Qwen3-0.6B except its LM head emits
+codec tokens instead of text. Verified against the actual config.json of
+`Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice` (talker_config: 28 layers, 1024 hidden,
+8 KV heads, 3072 intermediate, 3072 vocab, 128 head_dim).
 
-    NUM_LAYERS        28 → 20      fewer transformer layers
-    NUM_KV_HEADS       8 →  2      KV_SIZE 1024 → 256
-    INTERMEDIATE_SIZE 3072 → 2048  smaller SwiGLU MLP
-    VOCAB_SIZE     151936 → 3072   codec token vocab (not text)
+Per take-home spec ("If the talker decoder's backbone is a different size than
+0.6B, document what you changed in the kernel and why"), the ONLY constant
+that changes vs upstream is:
 
-Unchanged: HIDDEN_SIZE 1024, NUM_Q_HEADS 16, HEAD_DIM 128, MAX_SEQ_LEN 2048.
+    VOCAB_SIZE  151936 → 3072   (LM head: codec tokens, not text)
+
+All other dims match upstream Qwen3-0.6B exactly — no other kernel change.
 """
 
 import math
@@ -18,13 +20,13 @@ import struct
 
 import torch
 
-NUM_LAYERS = 20
-NUM_KV_HEADS = 2
+NUM_LAYERS = 28
+NUM_KV_HEADS = 8
 HEAD_DIM = 128
 HIDDEN_SIZE = 1024
-INTERMEDIATE_SIZE = 2048
+INTERMEDIATE_SIZE = 3072
 Q_SIZE = 16 * HEAD_DIM  # 2048
-KV_SIZE = 2 * HEAD_DIM  # 256
+KV_SIZE = 8 * HEAD_DIM  # 1024
 MAX_SEQ_LEN = 2048
 VOCAB_SIZE = 3072
 
@@ -45,7 +47,7 @@ def _detect_prefix(state: dict) -> str:
     )
 
 
-def load_weights(model_name="Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice", verbose: bool = True):
+def load_weights(model_name="Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice", verbose: bool = True):
     """Load Qwen3-TTS talker decoder weights from HuggingFace into GPU tensors.
 
     Loads the full Qwen3-TTS checkpoint (gated repo — needs HF auth) via the
@@ -178,7 +180,7 @@ class Decoder:
         self,
         weights=None,
         tokenizer=None,
-        model_name="Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+        model_name="Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
         verbose: bool = True,
     ):
         if weights is None:

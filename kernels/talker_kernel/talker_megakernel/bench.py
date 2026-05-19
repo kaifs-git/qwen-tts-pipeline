@@ -17,9 +17,9 @@ Two modes:
                           while talker spec uses 3D mrope — the integration
                           tradeoff documented in README.
 
-Replaces the upstream Qwen3-0.6B bench (broken after the talker constants
-swap — 0.6B weights no longer fit the 20-layer / 2-KV-head / 3072-vocab
-kernel).
+Replaces the upstream Qwen3-0.6B bench (its token-id input path + 151936-vocab
+LM head don't fit the talker kernel, whose head is 3072 codec tokens and whose
+input is inputs_embeds, not token ids).
 
 Run:
     python -m talker_megakernel.bench --mode throughput
@@ -184,7 +184,7 @@ def bench_prefill_only(prefill: int, warmup: int, runs: int):
     )
 
 
-def correctness_check(prefill: int, decode: int, model_name: str = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"):
+def correctness_check(prefill: int, decode: int, model_name: str = "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice"):
     """Compare kernel last_hidden_state vs stock HF talker forward, per step.
 
     Reports cosine similarity per step and aggregate min/mean. A score near
@@ -249,7 +249,7 @@ def main():
     p.add_argument("--decode", type=int, default=DEFAULT_DECODE)
     p.add_argument("--warmup", type=int, default=DEFAULT_WARMUP)
     p.add_argument("--runs", type=int, default=DEFAULT_RUNS)
-    p.add_argument("--model", default="Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice")
+    p.add_argument("--model", default="Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice")
     args = p.parse_args()
 
     print("=" * 64)
