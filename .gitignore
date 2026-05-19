@@ -22,3 +22,7 @@ demo/*.wav
 
 # tmp dirs
 tmp/
+
+# upstream kernel clones — re-clone per README; only `kernels/talker_kernel/` (our fork) is tracked
+kernels/qwen_megakernel/
+kernels/Qwen3-TTS/
