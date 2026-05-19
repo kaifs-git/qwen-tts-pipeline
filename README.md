@@ -12,7 +12,7 @@ Targets: **TTFC < 60ms**, **RTF < 0.15**, streaming frame-by-frame to Pipecat (n
 |-------|------|-------|
 | A1 | Pipecat skeleton: Groq STT + Groq LLM + edge-tts TTSService + LocalAudioTransport + Silero VAD + 7-stage smoke test | ✅ `server.py`, `pipeline/tts_edge.py`, `tests/smoke.py` |
 | A2 | `MegakernelTTSService` + `TalkerBackend` protocol + `MockTalkerBackend` + `--tts` CLI flag | ✅ `pipeline/tts_megakernel.py`, `pipeline/talker_backend.py` |
-| A3 | Benchmark harness (TTFC / RTF / tok/s) | ⏳ `bench/` |
+| A3 | Benchmark harness — TTFC / synth_ms / RTF, per backend, p50+p95, JSON output, target-pass marks | ✅ `bench/perf.py` |
 | B  | Talker kernel fork: NUM_LAYERS 28→20, NUM_KV_HEADS 8→2, VOCAB 151936→3072, prefill API | ⏳ `kernels/talker_kernel/` |
 | C  | vast.ai RTX 5090 bring-up + real megakernel TTS + bench + demo | ⏳ |
 
@@ -128,6 +128,31 @@ venv/bin/python server.py --tts mock-megakernel    # 440Hz sine, paced at RTF=0.
 
 ---
 
+## Benchmark TTS backends
+
+```bash
+venv/bin/python -m bench.perf                              # all backends (edge + mock)
+venv/bin/python -m bench.perf --backends mock-megakernel   # one backend
+venv/bin/python -m bench.perf --runs 10 --warmup 3
+venv/bin/python -m bench.perf --no-pace                    # mock: raw throughput (pace_rtf=0)
+venv/bin/python -m bench.perf --output bench/results/run1.json
+```
+
+Measures, per backend × per prompt (short / medium / long):
+
+| metric | what it means | target |
+|--------|---------------|--------|
+| **TTFC** p50/p95 | Time-To-First-Chunk: first `TTSAudioRawFrame` after `run_tts` call | < 60ms |
+| **synth_ms** p50 | total wall-time from `run_tts` to last frame | informational |
+| **audio_s** mean | PCM duration produced | informational |
+| **RTF** p50/p95 | `synth_s / audio_s` — real-time factor | < 0.15 |
+
+Table marks ✓/✗ against the spec targets. Today the marks are mostly ✗ because edge-tts is a cloud round-trip and mock pacing is set to RTF=0.15 (intentionally at the target — mock is a placeholder, not a winner). The marks turn ✓ in Phase C with the real GPU backend.
+
+JSON output (`--output`) holds every run, suitable for diffing across runs / commits.
+
+---
+
 ## Repo layout
 
 ```
@@ -140,7 +165,8 @@ venv/bin/python server.py --tts mock-megakernel    # 440Hz sine, paced at RTF=0.
 │   └── talker_backend.py  # TalkerBackend protocol + MockTalkerBackend
 ├── tests/
 │   └── smoke.py           # pre-flight checks (7 stages, see above)
-├── bench/                 # perf harness (Phase A3) — TTFC / RTF / tok/s
+├── bench/
+│   └── perf.py            # TTFC / synth / RTF harness — runs against any TTSService
 ├── docs/
 │   └── takehome_project.docx   # assignment spec
 ├── kernels/               # upstream clones (untouched)
