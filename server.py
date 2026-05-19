@@ -15,6 +15,9 @@ TTS backends:
     --tts mock-megakernel   MegakernelTTSService + MockTalkerBackend
                             (sine wave, paced at RTF=0.15 — same interface the
                              real megakernel backend will satisfy on vast.ai)
+    --tts megakernel        MegakernelTTSService + MegakernelTalkerBackend
+                            (real Qwen3-TTS talker via adapted CUDA megakernel,
+                             RTX 5090 / sm_120 required — Phase C)
 
 Run:
     venv/bin/python server.py
@@ -52,7 +55,7 @@ from pipeline.tts_megakernel import MegakernelTTSService
 
 load_dotenv()
 
-TTS_BACKENDS = ("edge", "mock-megakernel")
+TTS_BACKENDS = ("edge", "mock-megakernel", "megakernel")
 
 
 def build_tts(name: str):
@@ -60,6 +63,13 @@ def build_tts(name: str):
         return EdgeTTSService(voice="en-US-AriaNeural")
     if name == "mock-megakernel":
         return MegakernelTTSService(backend=MockTalkerBackend())
+    if name == "megakernel":
+        # Lazy import — pulls in torch, transformers, qwen_tts, and the talker
+        # megakernel CUDA build. Local box without GPU will error here, which
+        # is intentional — keeps `--tts edge` / `--tts mock-megakernel` paths
+        # GPU-free.
+        from pipeline.talker_backend_megakernel import MegakernelTalkerBackend
+        return MegakernelTTSService(backend=MegakernelTalkerBackend())
     raise ValueError(f"unknown --tts backend: {name}")
 
 SYSTEM_PROMPT = (

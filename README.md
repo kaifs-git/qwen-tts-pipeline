@@ -18,7 +18,7 @@ Targets: **TTFC < 60ms**, **RTF < 0.15**, streaming frame-by-frame to Pipecat (n
 | B1.3 | Embed-bypass: `Decoder.step_embed(inputs_embeds[HIDDEN_SIZE]) -> codec_id` — pass single-row scratch as `embed_weight`, token_id=0. Zero CUDA edit. | ✅ `talker_megakernel/model.py::Decoder.step_embed` |
 | B1.4 | Prefill API: `Decoder.prefill(seq[N, HIDDEN_SIZE])` loops `step_embed` to seed KV from text-encoder hiddens. | ✅ `talker_megakernel/model.py::Decoder.prefill` |
 | B1.5 | Talker bench (replaces upstream 0.6B `bench.py` which is broken after constants swap) | ⏳ |
-| B1.6 | `MegakernelTalkerBackend` Python class — text encoder → talker prefill → autoregressive (step_embed → codec_head argmax → CodePredictor 31-step → vocoder → PCM yield) | ⏳ |
+| B1.6 | `MegakernelTalkerBackend` scaffold — TalkerBackend-protocol class wired into `server.py --tts megakernel` (lazy GPU import). Generate loop + CodePredictor inner step + embed compose implemented; `_build_prefix` + `_vocoder_decode` marked TODO for vast.ai validation. | ✅ scaffold `pipeline/talker_backend_megakernel.py` |
 | C  | vast.ai RTX 5090 bring-up + kernel build + correctness vs HF reference + perf + demo | ⏳ |
 
 Local box has no GPU — Phase A and Python-side Phase B work happen here, kernel build + Qwen3-TTS run on vast.ai.
@@ -172,6 +172,7 @@ venv/bin/python server.py --tts mock-megakernel    # 440Hz sine, paced at RTF=0.
 |---------|------|-------------|
 | `edge`            | Microsoft Edge cloud TTS (placeholder, real-sounding voice) | Default; demo the pipeline end-to-end |
 | `mock-megakernel` | `MegakernelTTSService` + `MockTalkerBackend` (sine wave) | Verify pipeline shape; proves swap is one flag away on vast.ai |
+| `megakernel`      | `MegakernelTTSService` + `MegakernelTalkerBackend` (real Qwen3-TTS via talker megakernel) | **Phase C only — requires CUDA 12.8 + sm_120** |
 
 - Silero VAD handles turn-taking — just speak, no Enter-to-talk
 - Talking over the assistant interrupts it (Pipecat `allow_interruptions=True`)
