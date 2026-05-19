@@ -1,3 +1,4 @@
+# Pipecat + cloud APIs (Phase A — runs anywhere, no GPU)
 pipecat-ai>=0.0.108
 pipecat-ai[local,silero,groq]>=0.0.108
 groq>=0.11.0
@@ -8,7 +9,13 @@ numpy>=1.24.0
 python-dotenv>=1.0.0
 websockets>=12.0
 loguru>=0.7.0
-# legacy ad-hoc loop (main.py) deps — keep until removed
+
+# Phase C only (vast.ai / RTX 5090) — uncomment OR install separately per
+# docs/vastai_runbook.md::C2. Pulls torch + transformers via deps; skip on
+# local box without CUDA to save ~3 GB venv bloat.
+# qwen-tts>=0.1.0
+
+# Legacy ad-hoc loop (main.py removed in Phase A1) — deps left until next sweep
 sounddevice>=0.4.7
 pygame>=2.1.0
 scipy>=1.11.0

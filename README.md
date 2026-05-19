@@ -119,6 +119,8 @@ sudo apt install -y nvidia-driver-555 cuda-toolkit-12-8
 # CUDA 12.8 minimum — kernel will not compile on older
 ```
 
+> **Full vast.ai bring-up is in `docs/vastai_runbook.md`** — instance picker, HF_HOME setup, kernel build, bench commands, correctness check, perf table population, demo recording. Follow that runbook on the rented GPU box.
+
 ### Python deps
 
 ```bash
@@ -131,7 +133,8 @@ venv/bin/pip install -r requirements.txt
 ```bash
 cp .env.example .env
 # add: GROQ_API_KEY=gsk_...
-# Phase C also: HUGGINGFACE_TOKEN=hf_...   (Qwen/Qwen3-TTS is gated)
+# Phase C also: HUGGINGFACE_HUB_TOKEN=hf_...   (Qwen/Qwen3-TTS is gated)
+# Phase C also: HF_HOME=/workspace/hf_cache    (vast.ai disk layout — see runbook)
 ```
 
 ---

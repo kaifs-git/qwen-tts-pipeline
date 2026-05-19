@@ -49,7 +49,10 @@ PROMPTS = {
 }
 # fmt: on
 
+# Default = local-runnable only (no GPU). `megakernel` is opt-in via --backends
+# and requires CUDA 12.8 + sm_120 + Qwen3-TTS weights (Phase C / vast.ai).
 DEFAULT_BACKENDS = ("edge", "mock-megakernel")
+ALL_BACKENDS = ("edge", "mock-megakernel", "megakernel")
 SAMPLE_RATE = 24000
 BYTES_PER_SAMPLE = 2
 CHANNELS = 1
@@ -87,6 +90,14 @@ def build_service(name: str, pace_rtf: float):
         return EdgeTTSService(voice="en-US-AriaNeural")
     if name == "mock-megakernel":
         return MegakernelTTSService(backend=MockTalkerBackend(pace_rtf=pace_rtf))
+    if name == "megakernel":
+        # Lazy import — pulls in torch / transformers / qwen_tts / talker_kernel
+        # CUDA build. Local box without GPU will error here. Use this backend
+        # only on the vast.ai Phase C box. See docs/vastai_runbook.md::C11.
+        from pipeline.talker_backend_megakernel import (  # noqa: E402
+            MegakernelTalkerBackend,
+        )
+        return MegakernelTTSService(backend=MegakernelTalkerBackend())
     raise ValueError(f"unknown backend: {name}")
 
 
@@ -214,7 +225,7 @@ async def main():
     p.add_argument(
         "--backends",
         nargs="+",
-        choices=DEFAULT_BACKENDS,
+        choices=ALL_BACKENDS,
         default=list(DEFAULT_BACKENDS),
     )
     p.add_argument("--runs", type=int, default=3)

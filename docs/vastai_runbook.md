@@ -153,14 +153,11 @@ cd ../..
 
 Synthetic random weights, isolates raw kernel perf. No HF model needed.
 
-```bash
-venv/bin/python -m talker_megakernel.bench --mode throughput --prefill 32 --decode 256 --runs 5
-```
+`talker_megakernel` is not a pip-installed package — `cd` into the kernel dir so Python resolves the module from cwd:
 
-Working from `kernels/talker_kernel/`:
 ```bash
 cd kernels/talker_kernel
-../../venv/bin/python -m talker_megakernel.bench --mode throughput
+../../venv/bin/python -m talker_megakernel.bench --mode throughput --prefill 32 --decode 256 --runs 5
 cd ../..
 ```
 
