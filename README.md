@@ -13,10 +13,15 @@ Targets: **TTFC < 60ms**, **RTF < 0.15**, streaming frame-by-frame to Pipecat (n
 | A1 | Pipecat skeleton: Groq STT + Groq LLM + edge-tts TTSService + LocalAudioTransport + Silero VAD + 7-stage smoke test | ✅ `server.py`, `pipeline/tts_edge.py`, `tests/smoke.py` |
 | A2 | `MegakernelTTSService` + `TalkerBackend` protocol + `MockTalkerBackend` + `--tts` CLI flag | ✅ `pipeline/tts_megakernel.py`, `pipeline/talker_backend.py` |
 | A3 | Benchmark harness — TTFC / synth_ms / RTF, per backend, p50+p95, JSON output, target-pass marks | ✅ `bench/perf.py` |
-| B  | Talker kernel fork: NUM_LAYERS 28→20, NUM_KV_HEADS 8→2, VOCAB 151936→3072, prefill API | ⏳ `kernels/talker_kernel/` |
-| C  | vast.ai RTX 5090 bring-up + real megakernel TTS + bench + demo | ⏳ |
+| B1.1 | Talker kernel fork: constants swap (NUM_LAYERS 28→20, NUM_KV_HEADS 8→2, INTERMEDIATE 3072→2048, VOCAB 151936→3072) | ✅ `kernels/talker_kernel/csrc/kernel.cu`, `talker_megakernel/model.py` |
+| B1.2 | Weight loader for Qwen3-TTS talker `state_dict` — auto-detects `talker.model.*` vs `model.*` prefix; pulls embed from `codec_embedding`, lm_head from `codec_head` (NOT tied) | ✅ `talker_megakernel/model.py::load_weights` |
+| B1.3 | Embed-bypass: `Decoder.step_embed(inputs_embeds[HIDDEN_SIZE]) -> codec_id` — pass single-row scratch as `embed_weight`, token_id=0. Zero CUDA edit. | ✅ `talker_megakernel/model.py::Decoder.step_embed` |
+| B1.4 | Prefill API: `Decoder.prefill(seq[N, HIDDEN_SIZE])` loops `step_embed` to seed KV from text-encoder hiddens. | ✅ `talker_megakernel/model.py::Decoder.prefill` |
+| B1.5 | Talker bench (replaces upstream 0.6B `bench.py` which is broken after constants swap) | ⏳ |
+| B1.6 | `MegakernelTalkerBackend` Python class — text encoder → talker prefill → autoregressive (step_embed → codec_head argmax → CodePredictor 31-step → vocoder → PCM yield) | ⏳ |
+| C  | vast.ai RTX 5090 bring-up + kernel build + correctness vs HF reference + perf + demo | ⏳ |
 
-Local box has no GPU — Phase A and Python-side Phase B work happen here, kernel build + real Qwen3-TTS run on vast.ai.
+Local box has no GPU — Phase A and Python-side Phase B work happen here, kernel build + Qwen3-TTS run on vast.ai.
 
 ---
 
@@ -42,6 +47,52 @@ mic → LocalAudioInput → Silero VAD → GroqSTT (whisper-large-v3-turbo)
 
 ---
 
+## Kernel modifications (Phase B)
+
+> Per take-home spec: *"If the talker decoder's backbone is a different size than 0.6B, document what you changed in the kernel and why."*
+
+Forked AlpinDale's `qwen_megakernel` → `kernels/talker_kernel/`. Upstream is locked to **Qwen3-0.6B**; talker decoder is a structurally identical Qwen3-family decoder at **different dims**. Constants were swapped; CUDA kernel logic untouched.
+
+### Constants (kernel.cu + talker_megakernel/model.py)
+
+| Constant | Qwen3-0.6B (upstream) | Qwen3-TTS talker | Why |
+|---|---|---|---|
+| `NUM_LAYERS` | 28 | **20** | Talker is shallower |
+| `NUM_KV_HEADS` | 8 | **2** | Group-query attention; KV_SIZE drops 1024 → 256 |
+| `INTERMEDIATE_SIZE` | 3072 | **2048** | Smaller SwiGLU MLP |
+| `VOCAB_SIZE` (`LDG_VOCAB_SIZE`) | 151936 | **3072** | LM head emits **codec tokens**, not text |
+| `HIDDEN_SIZE` | 1024 | 1024 | Unchanged |
+| `NUM_Q_HEADS` | 16 | 16 | Unchanged |
+| `HEAD_DIM` | 128 | 128 | Unchanged |
+| `MAX_SEQ_LEN` | 2048 | 2048 | Unchanged |
+
+`VOCAB_SIZE` drop (151936 → 3072) is the largest perf win — the LM head matmul dominates per-step latency in the original kernel.
+
+### Python-side adaptations (`talker_megakernel/model.py`)
+
+1. **Weight loader rewrite.** Pulls from `talker.model.layers.{i}.*` keys (full Qwen3-TTS checkpoint) or `model.layers.{i}.*` (standalone talker), auto-detected via `_detect_prefix`. Embed table comes from `codec_embedding.weight`. LM head from `codec_head.weight` (NOT tied to embedding — distinct from upstream 0.6B which ties them).
+2. **Embed-bypass — `Decoder.step_embed(inputs_embeds)`.** Talker never sees a token at its input; its input is a composed embedding (`sum(codec_embeds) + trailing_text_hidden[step] + tts_pad_embed`). To inject arbitrary `inputs_embeds` *without* modifying CUDA, the loader allocates a single-row scratch buffer; `step_embed` copies the incoming hidden into row 0 of scratch and calls the kernel with `embed_weight=scratch, token_id=0`. Kernel reads `scratch + 0 * HIDDEN_SIZE` → arbitrary embedding injected, no recompile.
+3. **Prefill — `Decoder.prefill(seq)`.** Loops `step_embed` over a seq of text-encoder hiddens to seed the KV cache. Upstream kernel has no batched-prefill op; adding one is out of scope per the spec's *"integration, not research"* directive. N×kernel-launch overhead is logged for the per-stage breakdown.
+4. **Hidden-state read.** `Decoder.last_hidden_state` returns the bf16 post-final-norm hidden buffer for the CodePredictor 31-step sub-codebook loop (CodePredictor stays in PyTorch — separate decoder, separate concern, not the megakernel target per spec).
+
+### What was deliberately NOT touched
+
+- **3D multimodal RoPE (mrope).** Talker uses `apply_multimodal_rotary_pos_emb` with `mrope_section` interleaved across head_dim. Kernel keeps 1D RoPE. Correctness impact will be measured against the HF reference on vast.ai (Phase C) and reported in the perf table — rewriting RoPE is *research*, not *integration*.
+- **CodePredictor.** 5-layer sub-codebook decoder; runs in stock PyTorch.
+- **Vocoder.** Stock Qwen3-TTS vocoder.
+
+### Build
+
+```bash
+cd kernels/talker_kernel
+pip install -r requirements.txt
+python -c "import talker_megakernel"   # JIT-compiles the CUDA extension on first import
+```
+
+CUDA 12.8 + sm_120 (Blackwell / RTX 5090) required. Will not build on older arch.
+
+---
+
 ## Setup
 
 ### System deps (Ubuntu 22.04 / Debian)
@@ -56,7 +107,7 @@ sudo apt install -y \
 
 - `portaudio19-dev` + `libportaudio2` — required by PyAudio (build + runtime)
 - `python3-dev` + `build-essential` — required by PyAudio + miniaudio C extensions
-- `git` — for submodule clones (`kernels/qwen_megakernel`, `kernels/Qwen3-TTS`)
+- `git` — for cloning upstream repos (`kernels/qwen_megakernel`, `kernels/Qwen3-TTS`)
 
 **No ffmpeg needed** — mp3 decode handled in-process by `miniaudio` (libmpg123 under the hood, statically bundled).
 
@@ -169,26 +220,45 @@ JSON output (`--output`) holds every run, suitable for diffing across runs / com
 │   └── perf.py            # TTFC / synth / RTF harness — runs against any TTSService
 ├── docs/
 │   └── takehome_project.docx   # assignment spec
-├── kernels/               # upstream clones (untouched)
-│   ├── qwen_megakernel/   # AlpinDale's Qwen3-0.6B CUDA megakernel
-│   └── Qwen3-TTS/         # Qwen3-TTS reference HF model
+├── kernels/
+│   ├── talker_kernel/     # OUR fork — Qwen3-TTS talker megakernel (TRACKED)
+│   │   ├── csrc/kernel.cu
+│   │   ├── csrc/torch_bindings.cpp
+│   │   └── talker_megakernel/  # model.py, build.py, bench.py
+│   ├── qwen_megakernel/   # AlpinDale's Qwen3-0.6B megakernel (gitignored, re-clone per Setup)
+│   └── Qwen3-TTS/         # Qwen3-TTS HF reference (gitignored, re-clone per Setup)
 ├── requirements.txt
 ├── .env.example
 └── README.md
 ```
 
-Phase B kernel fork will live at `kernels/talker_kernel/` to keep the upstream clone diff-clean.
+`kernels/qwen_megakernel/` and `kernels/Qwen3-TTS/` are upstream clones — gitignored to keep this repo's diff focused on our work. Clone them after first checkout:
+
+```bash
+git clone https://github.com/AlpinDale/qwen_megakernel kernels/qwen_megakernel
+git clone https://huggingface.co/Qwen/Qwen3-TTS    kernels/Qwen3-TTS  # gated, HF token needed
+```
 
 ---
 
 ## Performance numbers
 
-Filled in after Phase C. Will report:
-- Megakernel decode tok/s (upstream + adapted talker variant)
-- TTFC end-to-end
-- RTF
-- Per-stage latency breakdown (STT / LLM / talker / codepredictor / vocoder)
-- Where bottlenecks sit
+Filled in after Phase C on vast.ai (RTX 5090, sm_120, CUDA 12.8). Reporting plan per take-home spec ("show us real numbers, methodology, and where the bottlenecks are"):
+
+| Metric | Target (spec) | Today (mock) | Phase C |
+|--------|---------------|--------------|---------|
+| Megakernel decode tok/s (talker) | reference: ~1000 tok/s on 0.6B | n/a | TBD |
+| TTFC | < 60ms | 0ms ✓ (mock) | TBD |
+| RTF | < 0.15 | 0.17 (mock pacing + Python loop overhead) | TBD |
+| End-to-end (mic→speaker) | informational | n/a | TBD |
+| Per-stage breakdown (STT / LLM / talker prefill / talker decode / CodePredictor / vocoder) | informational | n/a | TBD |
+
+Methodology: `bench/perf.py` (Phase A3). Same harness runs locally (mock backend) and on vast.ai (real megakernel backend) — no methodology drift between dev and prod. JSON output enables diffing across kernel tweaks.
+
+Known bottlenecks anticipated for Phase C analysis:
+- **mrope vs 1D RoPE** — kernel kept 1D for integration scope; correctness vs HF reference will quantify mismatch.
+- **Vocoder first-chunk latency** likely dominates TTFC; megakernel speed irrelevant if vocoder takes >60ms to first PCM.
+- **CodePredictor 31-step inner loop per talker step** runs in stock PyTorch — single-batch eager mode overhead may matter.
 
 ---
 
@@ -200,7 +270,7 @@ Filled in after Phase C. Will report:
 
 ## Notes
 
-- `kernels/qwen_megakernel` and `kernels/Qwen3-TTS` are upstream clones, not git submodules — kept loose so kernel fork (Phase B) can live alongside as `kernels/talker_kernel/` without subtree drama.
+- `kernels/qwen_megakernel/` and `kernels/Qwen3-TTS/` are upstream clones, gitignored, not git submodules — re-clone per Setup. Keeps the tracked diff focused on `kernels/talker_kernel/` (our fork).
 - Pipecat 0.0.108. API may drift — pin if upgrading.
 - bfloat16 only. No quantization (per assignment spec).
 - mp3 decode via `miniaudio` (bundles libmpg123) — no ffmpeg system dep.
