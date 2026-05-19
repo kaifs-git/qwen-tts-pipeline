@@ -19,7 +19,7 @@ Targets: **TTFC < 60ms**, **RTF < 0.15**, streaming frame-by-frame to Pipecat (n
 | B1.4 | Prefill API: `Decoder.prefill(seq[N, HIDDEN_SIZE])` loops `step_embed` to seed KV from text-encoder hiddens. | ✅ `talker_megakernel/model.py::Decoder.prefill` |
 | B1.5 | Talker bench — three modes (`throughput` / `prefill` / `correctness`). Throughput uses synthetic random weights (kernel-only perf, no HF needed). Correctness compares kernel `last_hidden_state` vs stock HF `talker.forward(inputs_embeds=...)` cosine sim — quantifies 1D-RoPE vs 3D-mrope drift on real talker weights. | ✅ `kernels/talker_kernel/talker_megakernel/bench.py` |
 | B1.6 | `MegakernelTalkerBackend` scaffold — TalkerBackend-protocol class wired into `server.py --tts megakernel` (lazy GPU import). Generate loop + CodePredictor inner step + embed compose implemented; `_build_prefix` + `_vocoder_decode` marked TODO for vast.ai validation. | ✅ scaffold `pipeline/talker_backend_megakernel.py` |
-| C  | vast.ai RTX 5090 bring-up + kernel build + correctness vs HF reference + perf + demo | ⏳ |
+| C  | vast.ai RTX 5090 bring-up + kernel build + correctness vs HF reference + perf + demo | ⏳ runbook in `docs/vastai_runbook.md` |
 
 Local box has no GPU — Phase A and Python-side Phase B work happen here, kernel build + Qwen3-TTS run on vast.ai.
 
