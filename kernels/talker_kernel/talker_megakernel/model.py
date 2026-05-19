@@ -29,6 +29,9 @@ Q_SIZE = 16 * HEAD_DIM  # 2048
 KV_SIZE = 8 * HEAD_DIM  # 1024
 MAX_SEQ_LEN = 2048
 VOCAB_SIZE = 3072
+# Talker RoPE base. NOT 10000 (Qwen3-0.6B text default) — the talker config
+# sets rope_theta=1e6. Verified in Qwen3-TTS-12Hz-0.6B-CustomVoice config.json.
+ROPE_THETA = 1000000.0
 
 _decode = torch.ops.talker_megakernel_C.decode
 
@@ -108,10 +111,12 @@ def load_weights(model_name="Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice", verbose: boo
         "talker.codec_head.weight" if prefix == "talker.model." else "codec_head.weight"
     )
 
-    # RoPE tables (kept 1D — talker uses 3D mrope per spec; mrope correctness
-    # impact documented in README as known integration limitation).
+    # RoPE tables. Base = ROPE_THETA (1e6 for talker). Kept 1D rotate_half;
+    # talker uses interleaved 3D mrope, but with equal position axes mrope
+    # reduces to 1D — remaining gap is the interleaved-vs-rotate_half
+    # convention (tracked separately).
     inv_freq = 1.0 / (
-        10000.0 ** (torch.arange(0, HEAD_DIM, 2, dtype=torch.float32) / HEAD_DIM)
+        ROPE_THETA ** (torch.arange(0, HEAD_DIM, 2, dtype=torch.float32) / HEAD_DIM)
     )
     positions = torch.arange(MAX_SEQ_LEN, dtype=torch.float32)
     freqs = torch.outer(positions, inv_freq)
