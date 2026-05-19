@@ -66,25 +66,44 @@ venv/bin/python -c "from qwen_tts.core.models.modeling_qwen3_tts import Qwen3TTS
 
 ## C3. Upstream kernel clones + HF auth
 
+**Important:** point HF cache at the big `/workspace` partition before downloading anything. Vast.ai's root `/` is usually only ~20 GB; Qwen3-TTS (~3.5 GB) + Qwen3-0.6B (~1.2 GB) + pip + torch caches will fill it and crash mid-build.
+
 ```bash
+# 1. Move HF cache to the rented disk. Set ONCE per shell session;
+#    transformers / huggingface_hub / our load_weights / MegakernelTalkerBackend
+#    all read this env var.
+export HF_HOME=/workspace/hf_cache
+mkdir -p "$HF_HOME"
+
+# 2. Persist for new shells (optional but useful if you reconnect).
+echo 'export HF_HOME=/workspace/hf_cache' >> ~/.bashrc
+
+# 3. Upstream kernel source (gitignored in our repo; pulled fresh here).
 git clone https://github.com/AlpinDale/qwen_megakernel kernels/qwen_megakernel
 
-# Qwen/Qwen3-TTS is gated. Need HF token with terms accepted in browser first.
+# 4. Qwen/Qwen3-TTS is gated. Need HF token with terms accepted in browser first.
 export HUGGINGFACE_HUB_TOKEN=hf_...
 huggingface-cli login --token "$HUGGINGFACE_HUB_TOKEN"
 
-# Optional pre-cache (~3.5 GB) — saves 5 min on first model load
+# 5. Pre-cache (~3.5 GB) — saves 5 min on first model load.
 huggingface-cli download Qwen/Qwen3-TTS
 ```
 
-Verify gated access:
+Verify cache location + gated access:
 ```bash
+# Cache landed where expected
+du -sh "$HF_HOME/hub/models--Qwen--Qwen3-TTS"      # expect ~3.5G
+df -h /workspace                                   # confirm room left
+
+# Auth + gating works
 venv/bin/python -c "
 from huggingface_hub import hf_hub_download
 hf_hub_download('Qwen/Qwen3-TTS', 'config.json')
 print('gated access OK')
 "
 ```
+
+> Why HF_HOME and not `cache_dir=` in code: env-var is library-wide. Setting it once covers `transformers.from_pretrained` (our loader + the backend) AND the upstream `qwen_megakernel` bench (step C4, which pulls 0.6B weights). No per-call plumbing.
 
 ---
 
@@ -360,6 +379,8 @@ Then destroy the instance from the vast.ai console.
 | Kernel build: `unrecognized architecture sm_120` | nvcc too old | Need CUDA 12.8+, upgrade toolkit |
 | `OSError: Qwen/Qwen3-TTS is gated` | No HF token | `huggingface-cli login`, accept terms on hf.co/Qwen/Qwen3-TTS |
 | `import qwen_tts` fails | Package not installed | `pip install -U qwen-tts` |
+| `OSError: [Errno 28] No space left on device` mid-download | HF cache on small `/` partition | `export HF_HOME=/workspace/hf_cache` then re-download (see C3) |
+| `from_pretrained` re-downloads every run | `HF_HOME` not set in current shell | Re-export, or persist via `~/.bashrc` |
 | Kernel runs but tok/s < 200 | Sharing GPU / thermal throttle / wrong instance | Check `nvidia-smi`; pick a different vast.ai node |
 | Correctness sim < 0.5 | Weight loader prefix wrong or constants drifted | Diff `_detect_prefix` output keys vs actual state_dict keys |
 | `stream_pcm` yields no chunks | `_build_prefix` or `_vocoder_decode` still `NotImplementedError` | Fill in C9 |
