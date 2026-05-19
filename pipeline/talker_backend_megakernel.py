@@ -68,7 +68,7 @@ class MegakernelTalkerBackend:
     def __init__(
         self,
         *,
-        model_name: str = "Qwen/Qwen3-TTS",
+        model_name: str = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
         language: str = "english",
         speaker: Optional[str] = None,
         max_new_tokens: int = 4096,

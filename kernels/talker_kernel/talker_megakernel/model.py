@@ -45,7 +45,7 @@ def _detect_prefix(state: dict) -> str:
     )
 
 
-def load_weights(model_name="Qwen/Qwen3-TTS", verbose: bool = True):
+def load_weights(model_name="Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice", verbose: bool = True):
     """Load Qwen3-TTS talker decoder weights from HuggingFace into GPU tensors.
 
     Loads the full Qwen3-TTS checkpoint (gated repo — needs HF auth) via the
@@ -178,7 +178,7 @@ class Decoder:
         self,
         weights=None,
         tokenizer=None,
-        model_name="Qwen/Qwen3-TTS",
+        model_name="Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
         verbose: bool = True,
     ):
         if weights is None:

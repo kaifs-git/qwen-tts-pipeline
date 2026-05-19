@@ -184,7 +184,7 @@ def bench_prefill_only(prefill: int, warmup: int, runs: int):
     )
 
 
-def correctness_check(prefill: int, decode: int, model_name: str = "Qwen/Qwen3-TTS"):
+def correctness_check(prefill: int, decode: int, model_name: str = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"):
     """Compare kernel last_hidden_state vs stock HF talker forward, per step.
 
     Reports cosine similarity per step and aggregate min/mean. A score near
@@ -249,7 +249,7 @@ def main():
     p.add_argument("--decode", type=int, default=DEFAULT_DECODE)
     p.add_argument("--warmup", type=int, default=DEFAULT_WARMUP)
     p.add_argument("--runs", type=int, default=DEFAULT_RUNS)
-    p.add_argument("--model", default="Qwen/Qwen3-TTS")
+    p.add_argument("--model", default="Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice")
     args = p.parse_args()
 
     print("=" * 64)

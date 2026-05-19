@@ -133,7 +133,7 @@ venv/bin/pip install -r requirements.txt
 ```bash
 cp .env.example .env
 # add: GROQ_API_KEY=gsk_...
-# Phase C also: HUGGINGFACE_HUB_TOKEN=hf_...   (Qwen/Qwen3-TTS is gated)
+# Phase C also: HUGGINGFACE_HUB_TOKEN=hf_...   (gated: Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice)
 # Phase C also: HF_HOME=/workspace/hf_cache    (vast.ai disk layout — see runbook)
 ```
 

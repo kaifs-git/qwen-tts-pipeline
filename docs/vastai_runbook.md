@@ -81,24 +81,27 @@ echo 'export HF_HOME=/workspace/hf_cache' >> ~/.bashrc
 # 3. Upstream kernel source (gitignored in our repo; pulled fresh here).
 git clone https://github.com/AlpinDale/qwen_megakernel kernels/qwen_megakernel
 
-# 4. Qwen/Qwen3-TTS is gated. Need HF token with terms accepted in browser first.
+# 4. Model is gated. NOTE: `Qwen/Qwen3-TTS` is a COLLECTION, not a repo —
+#    the actual weights repo is `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`.
+#    Accept terms in browser FIRST at:
+#    https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
 export HUGGINGFACE_HUB_TOKEN=hf_...
 huggingface-cli login --token "$HUGGINGFACE_HUB_TOKEN"
 
-# 5. Pre-cache (~3.5 GB) — saves 5 min on first model load.
-huggingface-cli download Qwen/Qwen3-TTS
+# 5. Pre-cache (~3.5 GB) — saves time on first model load.
+huggingface-cli download Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
 ```
 
 Verify cache location + gated access:
 ```bash
 # Cache landed where expected
-du -sh "$HF_HOME/hub/models--Qwen--Qwen3-TTS"      # expect ~3.5G
-df -h /workspace                                   # confirm room left
+du -sh "$HF_HOME/hub/models--Qwen--Qwen3-TTS-12Hz-1.7B-CustomVoice"   # expect ~3.5G
+df -h /                                             # confirm room left (big disk = /)
 
 # Auth + gating works
-venv/bin/python -c "
+python -c "
 from huggingface_hub import hf_hub_download
-hf_hub_download('Qwen/Qwen3-TTS', 'config.json')
+hf_hub_download('Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice', 'config.json')
 print('gated access OK')
 "
 ```
@@ -374,7 +377,8 @@ Then destroy the instance from the vast.ai console.
 |---|---|---|
 | `nvcc: command not found` | Runtime-only image | `apt install cuda-toolkit-12-8` |
 | Kernel build: `unrecognized architecture sm_120` | nvcc too old | Need CUDA 12.8+, upgrade toolkit |
-| `OSError: Qwen/Qwen3-TTS is gated` | No HF token | `huggingface-cli login`, accept terms on hf.co/Qwen/Qwen3-TTS |
+| `Repository Not Found .../Qwen/Qwen3-TTS` | `Qwen/Qwen3-TTS` is a collection, not a repo | Use `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice` |
+| `OSError: ... is gated` / 403 | Terms not accepted for the specific repo | Accept at hf.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice |
 | `import qwen_tts` fails | Package not installed | `pip install -U qwen-tts` |
 | `OSError: [Errno 28] No space left on device` mid-download | HF cache on small `/` partition | `export HF_HOME=/workspace/hf_cache` then re-download (see C3) |
 | `from_pretrained` re-downloads every run | `HF_HOME` not set in current shell | Re-export, or persist via `~/.bashrc` |
