@@ -34,6 +34,9 @@ from talker_megakernel.model import (  # noqa: E402
 MODEL = "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice"
 TEXT = "Real time voice agents live and die by latency. This is a baseline test."
 LANGUAGE = "English"
+MAX_NEW_TOKENS = 512   # runaway guard: kernel drift may never emit EOS
+
+_decode_steps = 0      # counts single-token decode calls through the kernel
 
 
 def main():
@@ -84,6 +87,10 @@ def main():
             out = torch.zeros(1, seq, h, dtype=embeds.dtype, device=embeds.device)
             out[0, -1] = last.to(embeds.dtype)
         else:                     # single-token decode
+            global _decode_steps
+            _decode_steps += 1
+            if _decode_steps % 25 == 0:
+                print(f"  [decode step {_decode_steps}]", flush=True)
             kernel.step_embed(embeds[0, 0])
             out = kernel.last_hidden_state.clone().view(1, 1, h).to(embeds.dtype)
 
@@ -104,11 +111,17 @@ def main():
 
     # ---- warmup + timed run ----
     print("warmup ...")
-    tts.generate_custom_voice(text="warm up.", speaker=speaker, language=LANGUAGE)
+    tts.generate_custom_voice(
+        text="warm up.", speaker=speaker, language=LANGUAGE, max_new_tokens=32
+    )
 
+    global _decode_steps
+    _decode_steps = 0
     torch.cuda.synchronize()
     t0 = time.perf_counter()
-    wavs, sr = tts.generate_custom_voice(text=TEXT, speaker=speaker, language=LANGUAGE)
+    wavs, sr = tts.generate_custom_voice(
+        text=TEXT, speaker=speaker, language=LANGUAGE, max_new_tokens=MAX_NEW_TOKENS
+    )
     torch.cuda.synchronize()
     dt = time.perf_counter() - t0
 
