@@ -77,10 +77,17 @@ def main():
         bs, seq, h = embeds.shape
         assert bs == 1, "kernel path is batch-size 1 only"
 
+        # CUDA step_embed assumes a contiguous [HIDDEN_SIZE] bf16 buffer; row
+        # views from `embeds[0, i]` are strided → out-of-bounds read → GPU
+        # deadlock. Force contiguous bf16 before every kernel call.
+        embeds = embeds.contiguous().to(torch.bfloat16)
+
         if seq > 1:               # prefill
+            print(f"  [prefill seq={seq}] ...", flush=True)
             kernel.reset()
             for i in range(seq):
-                kernel.step_embed(embeds[0, i])
+                kernel.step_embed(embeds[0, i].contiguous())
+            print(f"  [prefill done]", flush=True)
             last = kernel.last_hidden_state.clone()
             # only the final position's hidden is consumed by the LM head;
             # fill earlier positions with zeros (unused by generation).
@@ -91,7 +98,7 @@ def main():
             _decode_steps += 1
             if _decode_steps % 25 == 0:
                 print(f"  [decode step {_decode_steps}]", flush=True)
-            kernel.step_embed(embeds[0, 0])
+            kernel.step_embed(embeds[0, 0].contiguous())
             out = kernel.last_hidden_state.clone().view(1, 1, h).to(embeds.dtype)
 
         if use_cache:
