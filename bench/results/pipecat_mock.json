@@ -1,0 +1,206 @@
+[
+  {
+    "backend": "mock-megakernel",
+    "prompt_key": "short",
+    "n": 5,
+    "ttfc_ms_p50": 0.4162900004303083,
+    "ttfc_ms_p95": 0.4481510004552547,
+    "synth_ms_p50": 600.5292520021612,
+    "audio_s_mean": 3.6,
+    "rtf_p50": 0.16681368111171144,
+    "rtf_p95": 0.16862132638885263,
+    "runs": [
+      {
+        "backend": "mock-megakernel",
+        "prompt_key": "short",
+        "prompt_words": 9,
+        "ttfc_ms": 0.33418499879189767,
+        "synth_ms": 607.0367749998695,
+        "audio_s": 3.6,
+        "rtf": 0.16862132638885263,
+        "chunks": 180,
+        "error": null
+      },
+      {
+        "backend": "mock-megakernel",
+        "prompt_key": "short",
+        "prompt_words": 9,
+        "ttfc_ms": 0.5055700021330267,
+        "synth_ms": 596.6197890011244,
+        "audio_s": 3.6,
+        "rtf": 0.165727719166979,
+        "chunks": 180,
+        "error": null
+      },
+      {
+        "backend": "mock-megakernel",
+        "prompt_key": "short",
+        "prompt_words": 9,
+        "ttfc_ms": 0.4162900004303083,
+        "synth_ms": 609.3593229998078,
+        "audio_s": 3.6,
+        "rtf": 0.1692664786110577,
+        "chunks": 180,
+        "error": null
+      },
+      {
+        "backend": "mock-megakernel",
+        "prompt_key": "short",
+        "prompt_words": 9,
+        "ttfc_ms": 0.3110899997409433,
+        "synth_ms": 597.4897109990707,
+        "audio_s": 3.6,
+        "rtf": 0.1659693641664085,
+        "chunks": 180,
+        "error": null
+      },
+      {
+        "backend": "mock-megakernel",
+        "prompt_key": "short",
+        "prompt_words": 9,
+        "ttfc_ms": 0.4481510004552547,
+        "synth_ms": 600.5292520021612,
+        "audio_s": 3.6,
+        "rtf": 0.16681368111171144,
+        "chunks": 180,
+        "error": null
+      }
+    ]
+  },
+  {
+    "backend": "mock-megakernel",
+    "prompt_key": "medium",
+    "n": 5,
+    "ttfc_ms_p50": 0.38323700209730305,
+    "ttfc_ms_p95": 0.6663750027655624,
+    "synth_ms_p50": 1541.2840819990379,
+    "audio_s_mean": 8.8,
+    "rtf_p50": 0.17514591840898155,
+    "rtf_p95": 0.17702986659101455,
+    "runs": [
+      {
+        "backend": "mock-megakernel",
+        "prompt_key": "medium",
+        "prompt_words": 22,
+        "ttfc_ms": 0.3259779987274669,
+        "synth_ms": 1501.1717939996743,
+        "audio_s": 8.8,
+        "rtf": 0.17058770386359934,
+        "chunks": 440,
+        "error": null
+      },
+      {
+        "backend": "mock-megakernel",
+        "prompt_key": "medium",
+        "prompt_words": 22,
+        "ttfc_ms": 0.3732879995368421,
+        "synth_ms": 1541.2840819990379,
+        "audio_s": 8.8,
+        "rtf": 0.17514591840898155,
+        "chunks": 440,
+        "error": null
+      },
+      {
+        "backend": "mock-megakernel",
+        "prompt_key": "medium",
+        "prompt_words": 22,
+        "ttfc_ms": 0.6663750027655624,
+        "synth_ms": 1504.171551001491,
+        "audio_s": 8.8,
+        "rtf": 0.17092858534107852,
+        "chunks": 440,
+        "error": null
+      },
+      {
+        "backend": "mock-megakernel",
+        "prompt_key": "medium",
+        "prompt_words": 22,
+        "ttfc_ms": 0.7191559998318553,
+        "synth_ms": 1557.8628260009282,
+        "audio_s": 8.8,
+        "rtf": 0.17702986659101455,
+        "chunks": 440,
+        "error": null
+      },
+      {
+        "backend": "mock-megakernel",
+        "prompt_key": "medium",
+        "prompt_words": 22,
+        "ttfc_ms": 0.38323700209730305,
+        "synth_ms": 1588.850252002885,
+        "audio_s": 8.8,
+        "rtf": 0.18055116500032783,
+        "chunks": 440,
+        "error": null
+      }
+    ]
+  },
+  {
+    "backend": "mock-megakernel",
+    "prompt_key": "long",
+    "n": 5,
+    "ttfc_ms_p50": 0.5582910016528331,
+    "ttfc_ms_p95": 0.7329899999604095,
+    "synth_ms_p50": 6173.980309002218,
+    "audio_s_mean": 34.4,
+    "rtf_p50": 0.1794761717733203,
+    "rtf_p95": 0.18028384947673087,
+    "runs": [
+      {
+        "backend": "mock-megakernel",
+        "prompt_key": "long",
+        "prompt_words": 86,
+        "ttfc_ms": 0.3593830006138887,
+        "synth_ms": 6023.852108999563,
+        "audio_s": 34.4,
+        "rtf": 0.175111979912778,
+        "chunks": 1720,
+        "error": null
+      },
+      {
+        "backend": "mock-megakernel",
+        "prompt_key": "long",
+        "prompt_words": 86,
+        "ttfc_ms": 0.5582910016528331,
+        "synth_ms": 6098.088768001617,
+        "audio_s": 34.4,
+        "rtf": 0.1772700223256284,
+        "chunks": 1720,
+        "error": null
+      },
+      {
+        "backend": "mock-megakernel",
+        "prompt_key": "long",
+        "prompt_words": 86,
+        "ttfc_ms": 0.8212959983211476,
+        "synth_ms": 6201.764421999542,
+        "audio_s": 34.4,
+        "rtf": 0.18028384947673087,
+        "chunks": 1720,
+        "error": null
+      },
+      {
+        "backend": "mock-megakernel",
+        "prompt_key": "long",
+        "prompt_words": 86,
+        "ttfc_ms": 0.3536830008670222,
+        "synth_ms": 6223.181049997947,
+        "audio_s": 34.4,
+        "rtf": 0.18090642587203337,
+        "chunks": 1720,
+        "error": null
+      },
+      {
+        "backend": "mock-megakernel",
+        "prompt_key": "long",
+        "prompt_words": 86,
+        "ttfc_ms": 0.7329899999604095,
+        "synth_ms": 6173.980309002218,
+        "audio_s": 34.4,
+        "rtf": 0.1794761717733203,
+        "chunks": 1720,
+        "error": null
+      }
+    ]
+  }
+]
