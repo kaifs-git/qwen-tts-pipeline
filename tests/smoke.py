@@ -218,7 +218,10 @@ def test_pipeline_build(api_key):
 
         from pipecat.audio.vad.silero import SileroVADAnalyzer
         from pipecat.pipeline.pipeline import Pipeline
-        from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
+        from pipecat.processors.aggregators.llm_context import LLMContext
+        from pipecat.processors.aggregators.llm_response_universal import (
+            LLMContextAggregatorPair,
+        )
         from pipecat.services.groq.llm import GroqLLMService
         from pipecat.services.groq.stt import GroqSTTService
         from pipecat.transports.local.audio import (
@@ -247,8 +250,8 @@ def test_pipeline_build(api_key):
             stt = GroqSTTService(api_key=api_key)
             llm = GroqLLMService(api_key=api_key, model="llama-3.3-70b-versatile")
             tts = EdgeTTSService()
-            ctx = OpenAILLMContext(messages=[{"role": "system", "content": "x"}])
-            agg = llm.create_context_aggregator(ctx)
+            ctx = LLMContext(messages=[{"role": "system", "content": "x"}])
+            agg = LLMContextAggregatorPair(ctx)
             Pipeline([tin, stt, agg.user(), llm, tts, tout, agg.assistant()])
             ok("pipeline graph builds (mic + speaker + Silero + STT + LLM + TTS)")
         finally:

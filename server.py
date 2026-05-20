@@ -40,7 +40,10 @@ from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
-from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
+from pipecat.processors.aggregators.llm_context import LLMContext
+from pipecat.processors.aggregators.llm_response_universal import (
+    LLMContextAggregatorPair,
+)
 from pipecat.services.groq.llm import GroqLLMService
 from pipecat.services.groq.stt import GroqSTTService
 from pipecat.transports.local.audio import (
@@ -100,8 +103,10 @@ async def main(tts_backend: str):
     llm = GroqLLMService(api_key=api_key, model="llama-3.3-70b-versatile")
     tts = build_tts(tts_backend)
 
-    context = OpenAILLMContext(messages=[{"role": "system", "content": SYSTEM_PROMPT}])
-    context_aggregator = llm.create_context_aggregator(context)
+    # Pipecat 1.2.x: universal LLMContext + LLMContextAggregatorPair replace the
+    # removed OpenAILLMContext / llm.create_context_aggregator().
+    context = LLMContext(messages=[{"role": "system", "content": SYSTEM_PROMPT}])
+    context_aggregator = LLMContextAggregatorPair(context)
 
     pipeline = Pipeline(
         [
