@@ -351,7 +351,7 @@ class Decoder:
     def last_hidden_state(self) -> torch.Tensor:
         """Final post-norm hidden vector from the most recent step. Shape
         `[HIDDEN_SIZE]` bf16. Feed into the CodePredictor's input embedding
-        for the 31-step sub-codebook autoregressive loop."""
+        for the 15-step sub-codebook autoregressive loop."""
         return self._hidden
 
     def reset(self):

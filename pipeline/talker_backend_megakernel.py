@@ -24,10 +24,10 @@ Architecture (Phase B/C):
         │                                                        │
         │ CodePredictor.generate(                                │  ◄── stock PyTorch
         │     inputs_embeds = cat(last_hidden, codec_embed(id)), │      (5-layer model,
-        │     n=31)                                              │       eager mode)
-        │   → 31 sub-codebook codes                              │
+        │     n=15)                                              │       eager mode)
+        │   → 15 sub-codebook codes                              │
         │                                                        │
-        │ all_codes = [primary] + [31 sub_codes]   (32-way)      │
+        │ all_codes = [primary] + [15 sub_codes]   (16-way)      │
         │                                                        │
         │ speech_tokenizer.decode(all_codes)                     │  ◄── stock vocoder
         │   → 24kHz mono float waveform chunk                    │
@@ -118,7 +118,7 @@ class MegakernelTalkerBackend:
         self._codec_eos = self._talker_cfg.codec_eos_token_id
         self._codec_bos = self._talker_cfg.codec_bos_id
         self._codec_pad = self._talker_cfg.codec_pad_id
-        self._num_code_groups = self._talker_cfg.num_code_groups  # 32
+        self._num_code_groups = self._talker_cfg.num_code_groups  # 16 (real config)
 
     # -------------------------------------------------------------------------
     # TalkerBackend protocol
@@ -175,8 +175,8 @@ class MegakernelTalkerBackend:
 
             talker_hidden = self._kernel.last_hidden_state  # [HIDDEN_SIZE] bf16
 
-            # 3b. CodePredictor: 31-step inner autoregressive loop over
-            #     sub-codebooks. Stock PyTorch (eager). Returns 31 codes.
+            # 3b. CodePredictor: 15-step inner autoregressive loop over
+            #     sub-codebooks. Stock PyTorch (eager). Returns 15 codes.
             sub_codes = self._run_code_predictor(talker_hidden, primary_codec_id)
 
             # 3c. All 32 codes → vocoder → PCM chunk.
@@ -219,7 +219,7 @@ class MegakernelTalkerBackend:
         )
 
     def _run_code_predictor(self, talker_hidden, primary_codec_id) -> list[int]:
-        """31-step inner loop over CodePredictor for the 31 sub-codebooks."""
+        """15-step inner loop over CodePredictor for the 15 sub-codebooks."""
         import torch
 
         with torch.inference_mode():
@@ -239,7 +239,7 @@ class MegakernelTalkerBackend:
         return predictor_result.sequences.view(-1).tolist()
 
     def _vocoder_decode(self, primary_codec_id: int, sub_codes: list[int]) -> bytes:
-        """Decode 32-way codec codes → 24kHz mono PCM bytes.
+        """Decode 16-way codec codes → 24kHz mono PCM bytes.
 
         Stock `speech_tokenizer.decode(...)` API needs vast.ai validation —
         Qwen3-TTS ships a frame-by-frame streaming decoder in the v2 (12Hz)

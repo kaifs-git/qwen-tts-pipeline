@@ -73,7 +73,7 @@ The `VOCAB_SIZE` drop (151936 → 3072) is also a perf win — the LM head matmu
 1. **Weight loader rewrite.** Pulls from `talker.model.layers.{i}.*` keys (full Qwen3-TTS checkpoint) or `model.layers.{i}.*` (standalone talker), auto-detected via `_detect_prefix`. Embed table comes from `codec_embedding.weight`. LM head from `codec_head.weight` (NOT tied to embedding — distinct from upstream 0.6B which ties them).
 2. **Embed-bypass — `Decoder.step_embed(inputs_embeds)`.** Talker never sees a token at its input; its input is a composed embedding (`sum(codec_embeds) + trailing_text_hidden[step] + tts_pad_embed`). To inject arbitrary `inputs_embeds` *without* modifying CUDA, the loader allocates a single-row scratch buffer; `step_embed` copies the incoming hidden into row 0 of scratch and calls the kernel with `embed_weight=scratch, token_id=0`. Kernel reads `scratch + 0 * HIDDEN_SIZE` → arbitrary embedding injected, no recompile.
 3. **Prefill — `Decoder.prefill(seq)`.** Loops `step_embed` over a seq of text-encoder hiddens to seed the KV cache. Upstream kernel has no batched-prefill op; adding one is out of scope per the spec's *"integration, not research"* directive. N×kernel-launch overhead is logged for the per-stage breakdown.
-4. **Hidden-state read.** `Decoder.last_hidden_state` returns the bf16 post-final-norm hidden buffer for the CodePredictor 31-step sub-codebook loop (CodePredictor stays in PyTorch — separate decoder, separate concern, not the megakernel target per spec).
+4. **Hidden-state read.** `Decoder.last_hidden_state` returns the bf16 post-final-norm hidden buffer for the CodePredictor 15-step sub-codebook loop (CodePredictor stays in PyTorch — separate decoder, separate concern, not the megakernel target per spec).
 
 ### What was deliberately NOT touched
 
@@ -262,7 +262,7 @@ Methodology: `bench/perf.py` (Phase A3). Same harness runs locally (mock backend
 Known bottlenecks anticipated for Phase C analysis:
 - **mrope vs 1D RoPE** — kernel kept 1D for integration scope; correctness vs HF reference will quantify mismatch.
 - **Vocoder first-chunk latency** likely dominates TTFC; megakernel speed irrelevant if vocoder takes >60ms to first PCM.
-- **CodePredictor 31-step inner loop per talker step** runs in stock PyTorch — single-batch eager mode overhead may matter.
+- **CodePredictor 15-step inner loop per talker step** runs in stock PyTorch — single-batch eager mode overhead may matter.
 
 ---
 
