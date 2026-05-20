@@ -6,6 +6,14 @@ Targets: **TTFC < 60ms**, **RTF < 0.15**, streaming frame-by-frame to Pipecat (n
 
 ---
 
+## Demo
+
+End-to-end walkthrough (screen recording) on a vast.ai RTX 5090: [`docs/demo.mp4`](docs/demo.mp4). _(Narrated version coming.)_
+
+Covers, in order: hardware proof → Pipecat pipeline (smoke test) → TTSService streaming bench → talker megakernel throughput + correctness → kernel driving the talker in the real generate loop → baseline vs kernel audio, and the honest verdict on the 1D-RoPE drift limitation.
+
+---
+
 ## Status
 
 | Phase | What | Where |
