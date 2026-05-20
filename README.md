@@ -8,7 +8,11 @@ Targets: **TTFC < 60ms**, **RTF < 0.15**, streaming frame-by-frame to Pipecat (n
 
 ## Demo
 
-End-to-end walkthrough (screen recording) on a vast.ai RTX 5090: [`docs/demo.mp4`](docs/demo.mp4). _(Narrated version coming.)_
+End-to-end walkthrough (screen recording) on a vast.ai RTX 5090. _(Narrated version coming.)_
+
+▶️ **[Watch the demo](https://github.com/kaifs-git/qwen-tts-pipeline/releases/download/demo-v1/demo.mp4)**
+
+https://github.com/kaifs-git/qwen-tts-pipeline/releases/download/demo-v1/demo.mp4
 
 Covers, in order: hardware proof → Pipecat pipeline (smoke test) → TTSService streaming bench → talker megakernel throughput + correctness → kernel driving the talker in the real generate loop → baseline vs kernel audio, and the honest verdict on the 1D-RoPE drift limitation.
 
