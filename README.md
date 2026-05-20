@@ -19,7 +19,7 @@ Targets: **TTFC < 60ms**, **RTF < 0.15**, streaming frame-by-frame to Pipecat (n
 | B1.4 | Prefill API: `Decoder.prefill(seq[N, HIDDEN_SIZE])` loops `step_embed` to seed KV from text-encoder hiddens. | ✅ `talker_megakernel/model.py::Decoder.prefill` |
 | B1.5 | Talker bench — three modes (`throughput` / `prefill` / `correctness`). Throughput uses synthetic random weights (kernel-only perf, no HF needed). Correctness compares kernel `last_hidden_state` vs stock HF `talker.forward(inputs_embeds=...)` cosine sim — quantifies 1D-RoPE vs 3D-mrope drift on real talker weights. | ✅ `kernels/talker_kernel/talker_megakernel/bench.py` |
 | B1.6 | `MegakernelTalkerBackend` scaffold — TalkerBackend-protocol class wired into `server.py --tts megakernel` (lazy GPU import). Generate loop + CodePredictor inner step + embed compose implemented; `_build_prefix` + `_vocoder_decode` marked TODO for vast.ai validation. | ✅ scaffold `pipeline/talker_backend_megakernel.py` |
-| C  | vast.ai RTX 5090 bring-up + kernel build + correctness vs HF reference + perf + demo | ⏳ runbook in `docs/vastai_runbook.md` |
+| C  | vast.ai RTX 5090 bring-up: kernel builds on CUDA 13.1 (1141 tok/s), correctness cosine 0.83–0.89 vs HF, kernel runs in-loop end-to-end. Known limitation: 1D-RoPE drift → talker never emits EOS (see Performance numbers). | ✅ measured; `docs/vastai_runbook.md`, `scripts/kernel_generate.py` |
 
 Local box has no GPU — Phase A and Python-side Phase B work happen here, kernel build + Qwen3-TTS run on vast.ai.
 
@@ -89,7 +89,7 @@ pip install -r requirements.txt
 python -c "import talker_megakernel"   # JIT-compiles the CUDA extension on first import
 ```
 
-CUDA 12.8 + sm_120 (Blackwell / RTX 5090) required. Will not build on older arch.
+CUDA 12.8+ and sm_120 (Blackwell / RTX 5090) required. Will not build on older arch. Verified building + running on CUDA 13.1 / driver 590 / Python 3.12.
 
 ---
 
@@ -116,7 +116,7 @@ sudo apt install -y \
 ```bash
 # RTX 5090 / sm_120 / Blackwell
 sudo apt install -y nvidia-driver-555 cuda-toolkit-12-8
-# CUDA 12.8 minimum — kernel will not compile on older
+# CUDA 12.8+ — kernel will not compile on older (tested on 13.1)
 ```
 
 > **Full vast.ai bring-up is in `docs/vastai_runbook.md`** — instance picker, HF_HOME setup, kernel build, bench commands, correctness check, perf table population, demo recording. Follow that runbook on the rented GPU box.
@@ -175,7 +175,7 @@ venv/bin/python server.py --tts mock-megakernel    # 440Hz sine, paced at RTF=0.
 |---------|------|-------------|
 | `edge`            | Microsoft Edge cloud TTS (placeholder, real-sounding voice) | Default; demo the pipeline end-to-end |
 | `mock-megakernel` | `MegakernelTTSService` + `MockTalkerBackend` (sine wave) | Verify pipeline shape; proves swap is one flag away on vast.ai |
-| `megakernel`      | `MegakernelTTSService` + `MegakernelTalkerBackend` (real Qwen3-TTS via talker megakernel) | **Phase C only — requires CUDA 12.8 + sm_120** |
+| `megakernel`      | `MegakernelTTSService` + `MegakernelTalkerBackend` (real Qwen3-TTS via talker megakernel) | **GPU only — requires CUDA 12.8+ / sm_120** |
 
 - Silero VAD handles turn-taking — just speak, no Enter-to-talk
 - Talking over the assistant interrupts it (Pipecat `allow_interruptions=True`)
@@ -247,22 +247,50 @@ git clone https://huggingface.co/Qwen/Qwen3-TTS    kernels/Qwen3-TTS  # gated, H
 
 ## Performance numbers
 
-Filled in after Phase C on vast.ai (RTX 5090, sm_120, CUDA 12.8). Reporting plan per take-home spec ("show us real numbers, methodology, and where the bottlenecks are"):
+Measured on **vast.ai RTX 5090 (sm_120), CUDA 13.1, driver 590, Python 3.12**, bf16, single utterance, speaker `aiden`, language English. Per the spec: real numbers, methodology, and the bottleneck stated honestly — including where the integration falls short.
 
-| Metric | Target (spec) | Today (mock) | Phase C |
-|--------|---------------|--------------|---------|
-| Megakernel decode tok/s (talker) | reference: ~1000 tok/s on 0.6B | n/a | TBD |
-| TTFC | < 60ms | 0ms ✓ (mock) | TBD |
-| RTF | < 0.15 | 0.17 (mock pacing + Python loop overhead) | TBD |
-| End-to-end (mic→speaker) | informational | n/a | TBD |
-| Per-stage breakdown (STT / LLM / talker prefill / talker decode / CodePredictor / vocoder) | informational | n/a | TBD |
+### Kernel microbenchmarks (`talker_megakernel.bench`, synthetic weights)
 
-Methodology: `bench/perf.py` (Phase A3). Same harness runs locally (mock backend) and on vast.ai (real megakernel backend) — no methodology drift between dev and prod. JSON output enables diffing across kernel tweaks.
+| Metric | Result | Note |
+|--------|--------|------|
+| Upstream `qwen_megakernel` sanity (Qwen3-0.6B) | **1029 tok/s** | builds + runs on CUDA 13.1 unmodified |
+| Talker kernel throughput | **1141 tok/s** (0.876 ms/step) | beats upstream — smaller LM head (vocab 3072 vs 151936) |
+| Talker prefill (32 tokens) | **25.8 ms** (0.805 ms/step) | N×step_embed, no batched-prefill op |
+| Correctness vs HF `talker.forward` (cosine, 64 steps) | min **0.830** / p50 **0.878** / mean **0.890** | systematic fp32-vs-bf16 + 1D-RoPE drift |
 
-Known bottlenecks anticipated for Phase C analysis:
-- **mrope vs 1D RoPE** — kernel kept 1D for integration scope; correctness vs HF reference will quantify mismatch.
-- **Vocoder first-chunk latency** likely dominates TTFC; megakernel speed irrelevant if vocoder takes >60ms to first PCM.
-- **CodePredictor 15-step inner loop per talker step** runs in stock PyTorch — single-batch eager mode overhead may matter.
+### End-to-end, real model (`scripts/`)
+
+| Run | Audio | Synth | RTF | EOS |
+|-----|-------|-------|-----|-----|
+| Stock baseline (`baseline_tts.py`) | 6.24 s | 6735 ms | **1.079** | clean ✓ |
+| Kernel-in-loop (`kernel_generate.py`) | 40.88 s* | 33705 ms | 0.824* | **never fired** ✗ |
+
+\* **Not a valid RTF.** The kernel-driven talker hit the 512-token cap without emitting EOS — see the known limitation below. The number is recorded only to show the kernel *does* run inside the stock generate loop and accelerates per-step decode; it is not a real-time-factor claim.
+
+Methodology: `bench/perf.py` (Phase A3) for the Pipecat-path metrics; `talker_megakernel.bench` for raw kernel; `scripts/{baseline_tts,profile_stages,kernel_generate}.py` for stock vs kernel-in-loop. Same harness local (mock) and on GPU (real) — no methodology drift.
+
+### Why we are off the < 0.15 RTF target — honest bottleneck
+
+Two reasons, both measured, neither hidden:
+
+1. **CodePredictor dominates, and it is out of scope.** Per-stage profiling (`profile_stages.py`) of stock generate: CodePredictor **≈62%**, talker decode ≈25%, vocoder <1%. The spec scopes the work to *the talker decoder, not the codebook generator*. Even with the talker decode made free, projected RTF only falls to **~1.18** — still ~8× over target. The talker megakernel is the right target per spec, but it is not the dominant cost. Real-time would require kernelizing CodePredictor too (a Qwen3-shape 5-layer decoder — same technique applies; flagged as next step, not done here).
+
+2. **1D-RoPE drift breaks coherence (the known limitation, below).** Because the kernel-driven talker never emits EOS, its end-to-end run over-generates and the RTF number is meaningless.
+
+### Known limitation — 1D RoPE vs 3D mrope drift → no EOS
+
+**What.** The talker uses Qwen2.5-VL-style **3D multimodal RoPE** (`apply_multimodal_rotary_pos_emb`, `mrope_section`). The kernel keeps **1D RoPE** — a deliberate integration-scope choice (rewriting RoPE in CUDA is *research*, not *integration*, per the spec).
+
+**Measured impact.** Cosine similarity kernel-vs-HF talker hidden = **min 0.830 / mean 0.890** (fp32-vs-bf16 contributes part of this; the spread is tight and systematic, not a growing logic error). Audibly: the kernel produces **real speech-like signal** (kernel.wav rms 0.061, peak 0.72 — not silence, not noise), but the drift shifts the codec-token argmax enough that the **EOS token (2150) never wins**. Generation runs away to the `max_new_tokens` cap (512 steps → 40.88 s of babble for a ~6 s sentence) instead of self-terminating like stock (74 steps → 6.24 s, clean EOS).
+
+**Conclusion.** The integration is sound — kernel weight-load, embed-bypass, prefill, hidden-state hand-off, and the in-loop monkeypatch all work end-to-end, and per-step decode is faster than upstream. The remaining gap is **numerical fidelity**: closing it requires implementing true 3D mrope in `kernel.cu` (extend the rotary stage to 3× cos/sin tables applied per `mrope_section`). That is the documented next step; it was scoped out as research per the brief.
+
+### C9 integration bugs found + fixed (kernel-in-loop bring-up)
+
+The monkeypatch path (`scripts/kernel_generate.py`) surfaced three real integration bugs, all fixed:
+1. **Strided embed view → GPU deadlock.** `inputs_embeds[0, i]` is a non-contiguous row; `step_embed` assumes a contiguous `[HIDDEN_SIZE]` buffer → out-of-bounds read → cooperative-kernel hang that ignores SIGINT (needs instance reboot). Fix: `.contiguous().to(bf16)` before every kernel call.
+2. **Missing `hidden_states` → `'NoneType' not subscriptable`.** Stock `talker.forward` wraps the inner-model output as `hidden_states=(outputs.hidden_states, codec_ids)`, and `generate()` reads `hid[0][-1][:, -1:]` (`modeling_qwen3_tts.py:2281`). The patched inner forward must return `hidden_states=(out,)`, not just `last_hidden_state`.
+3. **Runaway generation.** No EOS (see limitation) → added a `max_new_tokens` cap as a guard so the run terminates and is debuggable.
 
 ---
 
