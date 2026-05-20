@@ -292,6 +292,19 @@ The monkeypatch path (`scripts/kernel_generate.py`) surfaced three real integrat
 2. **Missing `hidden_states` → `'NoneType' not subscriptable`.** Stock `talker.forward` wraps the inner-model output as `hidden_states=(outputs.hidden_states, codec_ids)`, and `generate()` reads `hid[0][-1][:, -1:]` (`modeling_qwen3_tts.py:2281`). The patched inner forward must return `hidden_states=(out,)`, not just `last_hidden_state`.
 3. **Runaway generation.** No EOS (see limitation) → added a `max_new_tokens` cap as a guard so the run terminates and is debuggable.
 
+### Pipecat integration — what is proven, what is not (honest scope)
+
+| Layer | Proven by | Status |
+|-------|-----------|--------|
+| Pipecat pipeline (STT → LLM → TTS → transport, VAD, interruptions) | `tests/smoke.py` (7 stages), edge-tts end-to-end | ✅ |
+| `MegakernelTTSService` + `TalkerBackend` protocol (frame format, sample-rate/channel validation, streaming `AsyncIterator`) | `MockTalkerBackend` streams `TTSAudioRawFrame`s through the real service; `bench/perf.py` measures TTFC/RTF | ✅ |
+| Talker megakernel produces audio | `scripts/kernel_generate.py` — kernel swapped into stock `generate` loop, writes `kernel.wav` | ✅ (GPU) |
+| **Real megakernel *through* the Pipecat service** | — | ❌ **not wired** |
+
+**The honest gap.** The GPU proof drives the kernel via stock `generate` (monkeypatch), which **bypasses** the Pipecat backend. The Pipecat path itself — `pipeline/talker_backend_megakernel.py::MegakernelTalkerBackend.stream_pcm` — still has two `NotImplementedError` stubs (`_build_prefix`, `_vocoder_decode`) that reproduce stock `generate`'s prefix construction and vocoder call. So `server.py --tts megakernel` does not run yet.
+
+**Why it was not finished.** It is gated by the drift limitation above: the kernel-driven talker never emits EOS, so even a fully wired Pipecat backend would stream the same incoherent, non-terminating babble. Filling the stubs proves only that babble flows frame-by-frame — no additional integration signal — so the effort was deferred behind fixing 3D-mrope. The pipeline's streaming contract is already proven with the mock backend, which is the part Pipecat actually owns. To finish it later: fill the two stubs (the logic is exactly what `kernel_generate.py` already exercises), add a `megakernel` branch to `bench/perf.py::build_service`, and run `--tts megakernel`.
+
 ---
 
 ## Known issues (Phase A1)
