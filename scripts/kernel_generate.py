@@ -87,8 +87,12 @@ def main():
             kernel.reset()
             for i in range(seq):
                 kernel.step_embed(embeds[0, i].contiguous())
-            print(f"  [prefill done]", flush=True)
             last = kernel.last_hidden_state.clone()
+            print(
+                f"  [prefill done] hidden: norm={last.float().norm():.3f} "
+                f"nan={torch.isnan(last).any().item()} inf={torch.isinf(last).any().item()}",
+                flush=True,
+            )
             # only the final position's hidden is consumed by the LM head;
             # fill earlier positions with zeros (unused by generation).
             out = torch.zeros(1, seq, h, dtype=embeds.dtype, device=embeds.device)
@@ -96,10 +100,14 @@ def main():
         else:                     # single-token decode
             global _decode_steps
             _decode_steps += 1
-            if _decode_steps % 25 == 0:
-                print(f"  [decode step {_decode_steps}]", flush=True)
-            kernel.step_embed(embeds[0, 0].contiguous())
-            out = kernel.last_hidden_state.clone().view(1, 1, h).to(embeds.dtype)
+            tid = kernel.step_embed(embeds[0, 0].contiguous())
+            last = kernel.last_hidden_state
+            print(
+                f"  [decode {_decode_steps}] tid={tid} "
+                f"norm={last.float().norm():.3f} nan={torch.isnan(last).any().item()}",
+                flush=True,
+            )
+            out = last.clone().view(1, 1, h).to(embeds.dtype)
 
         if use_cache:
             if past_key_values is None:
