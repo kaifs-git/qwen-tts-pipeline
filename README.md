@@ -107,6 +107,21 @@ CUDA 12.8+ and sm_120 (Blackwell / RTX 5090) required. Will not build on older a
 
 ## Setup
 
+### Quick start — GPU box (one command)
+
+For a fresh RTX 5090 / sm_120 instance, `scripts/setup_gpu.sh` does the whole bring-up (system deps, venv, Python deps, HF cache + auth, upstream kernel clone, model download, talker-kernel JIT build, verify) — replacing the manual steps in `docs/vastai_runbook.md`:
+
+```bash
+export HUGGINGFACE_HUB_TOKEN=hf_xxx   # gated model: accept terms first at
+                                      # https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice
+# from scratch:
+curl -fsSL https://raw.githubusercontent.com/kaifs-git/qwen-tts-pipeline/master/scripts/setup_gpu.sh | bash
+# or, if already cloned:
+bash scripts/setup_gpu.sh
+```
+
+Idempotent (safe to re-run). Verified on CUDA 13.1 / driver 590 / Python 3.12. Override `WORKDIR` (default `/workspace`) or `HF_HOME` via env. The manual steps below are for local/dev (no GPU) or if you prefer running each stage yourself.
+
 ### System deps (Ubuntu 22.04 / Debian)
 
 ```bash
