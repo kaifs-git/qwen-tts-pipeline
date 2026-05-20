@@ -118,8 +118,14 @@ def main():
             for layer_idx in range(NUM_LAYERS):
                 past_key_values.update(dummy, dummy, layer_idx, {})
 
+        # Stock talker.forward wraps this as hidden_states=(outputs.hidden_states,
+        # codec_ids); generate() then reads outputs.hidden_states[-1][:, -1:]
+        # (modeling_qwen3_tts.py:2281). Kernel exposes only the final hidden, so
+        # return a 1-tuple — its [-1] is exactly what generate consumes.
         return BaseModelOutputWithPast(
-            last_hidden_state=out, past_key_values=past_key_values
+            last_hidden_state=out,
+            past_key_values=past_key_values,
+            hidden_states=(out,),
         )
 
     m.talker.model.forward = patched_forward
